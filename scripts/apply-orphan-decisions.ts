@@ -15,7 +15,7 @@ import {
   finishJob,
   type Query,
 } from "@/lib/imports/migration/jobs";
-import { createDumpReader, type DumpReader } from "@/lib/imports/dump-reader";
+import { createDumpReader } from "@/lib/imports/dump-reader";
 import { Bc2Client } from "@/lib/imports/bc2-client";
 
 config({ path: resolve(process.cwd(), ".env.local") });
