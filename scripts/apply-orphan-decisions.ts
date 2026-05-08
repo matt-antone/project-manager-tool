@@ -17,6 +17,8 @@ import {
 } from "@/lib/imports/migration/jobs";
 import { createDumpReader } from "@/lib/imports/dump-reader";
 import { Bc2Client } from "@/lib/imports/bc2-client";
+import { migrateThreadsAndComments } from "@/lib/imports/migration/threads";
+import { migrateFiles } from "@/lib/imports/migration/files";
 
 config({ path: resolve(process.cwd(), ".env.local") });
 
@@ -237,7 +239,47 @@ async function main(): Promise<void> {
         }
         return applyDecision({ q, decision, dumpProject, jobId });
       },
-      runPhasesForProjects: async () => ({ ok: 0, failed: 0 }),
+      runPhasesForProjects: async ({ jobId, mapped }) => {
+        if (mapped.length === 0) return { ok: 0, failed: 0 };
+
+        const personMapRows = await q<{ basecamp_person_id: string; local_user_profile_id: string }>(
+          "select basecamp_person_id, local_user_profile_id from import_map_people",
+        );
+        const personMap = new Map<number, string>();
+        for (const row of personMapRows.rows) {
+          personMap.set(Number(row.basecamp_person_id), row.local_user_profile_id);
+        }
+
+        const reader = createDumpReader({
+          dumpDir: flags.dumpDir,
+          client: { get: async () => { throw new Error("apply-orphan-decisions: API fallback not supported"); } } as unknown as Bc2Client,
+          errors: new Set(),
+        });
+        const downloadEnv = {
+          username: requireEnv("BC2_USERNAME"),
+          password: requireEnv("BC2_PASSWORD"),
+          userAgent: process.env.BC2_USER_AGENT ?? "basecamp-clone-orphan-recon (matt@example.com)",
+        };
+
+        let ok = 0;
+        let failed = 0;
+        for (const m of mapped) {
+          const project = { bc2Id: m.bc2Id, localId: m.localId, name: m.name };
+          try {
+            const t = await migrateThreadsAndComments({ reader, q, jobId, project, personMap });
+            const f = await migrateFiles({ reader, q, jobId, project, downloadEnv, personMap });
+            console.log(
+              `phases ${m.bc2Id}: threads ok=${t.threads.success} fail=${t.threads.failed} skip=${t.threads.skipped} | files ok=${f.files.success} fail=${f.files.failed} skip=${f.files.skipped}`,
+            );
+            ok++;
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            console.error(`phases ${m.bc2Id}: ${msg}`);
+            failed++;
+          }
+        }
+        return { ok, failed };
+      },
       log: (s) => console.log(s),
       err: (s) => console.error(s),
     });

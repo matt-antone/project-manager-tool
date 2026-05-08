@@ -159,3 +159,42 @@ describe("runApply (mapping)", () => {
     expect(d.lines.some((l) => l.includes("already_mapped=3"))).toBe(true);
   });
 });
+
+describe("runApply (--run-phases)", () => {
+  it("calls runPhasesForProjects with the assigned + created projects only", async () => {
+    const d = fakeDeps({
+      flags: {
+        decisionsPath: "decisions.csv",
+        hasBackup: true,
+        runPhases: true,
+        dryRun: false,
+        dumpDir: "/tmp/dump",
+        verbose: false,
+      },
+    });
+    const exit = await runApply(d);
+    expect(exit).toBe(0);
+    expect(d.runPhasesForProjects).toHaveBeenCalledTimes(1);
+    const call = (d.runPhasesForProjects as unknown as { mock: { calls: unknown[][] } }).mock.calls[0][0] as {
+      jobId: string;
+      mapped: Array<{ bc2Id: number }>;
+    };
+    expect(call.mapped.map((m) => m.bc2Id)).toEqual([100, 200]); // skip excluded
+  });
+
+  it("phases report failures → exit 1", async () => {
+    const d = fakeDeps({
+      flags: {
+        decisionsPath: "decisions.csv",
+        hasBackup: true,
+        runPhases: true,
+        dryRun: false,
+        dumpDir: "/tmp/dump",
+        verbose: false,
+      },
+      runPhasesForProjects: vi.fn(async () => ({ ok: 1, failed: 1 })),
+    });
+    const exit = await runApply(d);
+    expect(exit).toBe(1);
+  });
+});
