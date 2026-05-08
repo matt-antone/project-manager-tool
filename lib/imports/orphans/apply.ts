@@ -148,6 +148,9 @@ export async function applyDecision(args: {
 }): Promise<ApplyOutcome> {
   const { q, decision, dumpProject, jobId } = args;
 
+  // Idempotency precheck takes precedence over every action including `skip`:
+  // an already-mapped project does not get a duplicate skip log, since the
+  // mapping itself is the canonical record of resolution.
   const existing = await existingMapping(q, decision.bc2Id);
   if (existing) {
     return { status: "already_mapped", localProjectId: existing };
