@@ -198,3 +198,23 @@ describe("runApply (--run-phases)", () => {
     expect(exit).toBe(1);
   });
 });
+
+describe("runApply (--dry-run)", () => {
+  it("dry-run still calls applyOne (deps decide what 'dry' means), reports skipped count", async () => {
+    const d = fakeDeps({
+      flags: {
+        decisionsPath: "decisions.csv",
+        hasBackup: true,
+        runPhases: false,
+        dryRun: true,
+        dumpDir: "/tmp/dump",
+        verbose: false,
+      },
+      applyOne: vi.fn(async () => ({ status: "skipped" } as ApplyOutcome)),
+    });
+    const exit = await runApply(d);
+    expect(exit).toBe(0);
+    expect(d.applyOne).toHaveBeenCalledTimes(3);
+    expect(d.lines.some((l) => l.includes("skipped=3"))).toBe(true);
+  });
+});
