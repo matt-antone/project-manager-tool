@@ -199,6 +199,32 @@ describe("runApply (--run-phases)", () => {
   });
 });
 
+describe("runApply (already_mapped + --run-phases)", () => {
+  it("includes already_mapped projects in the phase queue when --run-phases is set", async () => {
+    const d = fakeDeps({
+      flags: {
+        decisionsPath: "decisions.csv",
+        hasBackup: true,
+        runPhases: true,
+        dryRun: false,
+        dumpDir: "/tmp/dump",
+        verbose: false,
+      },
+      applyOne: vi.fn(async ({ decision }): Promise<ApplyOutcome> =>
+        decision.action === "skip"
+          ? { status: "skipped" }
+          : { status: "already_mapped", localProjectId: `prev-${decision.bc2Id}` },
+      ),
+    });
+    const exit = await runApply(d);
+    expect(exit).toBe(0);
+    const call = (d.runPhasesForProjects as unknown as { mock: { calls: unknown[][] } }).mock.calls[0][0] as {
+      mapped: Array<{ bc2Id: number }>;
+    };
+    expect(call.mapped.map((m) => m.bc2Id)).toEqual([100, 200]); // 300 was skip, excluded
+  });
+});
+
 describe("runApply (--dry-run)", () => {
   it("dry-run still calls applyOne (deps decide what 'dry' means), reports skipped count", async () => {
     const d = fakeDeps({

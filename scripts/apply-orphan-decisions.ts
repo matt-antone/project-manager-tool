@@ -135,6 +135,18 @@ export async function runApply(deps: ApplyDeps): Promise<number> {
             break;
           case "already_mapped":
             alreadyMapped++;
+            // Include already-mapped projects in the phase queue when
+            // --run-phases is set, so the documented two-run workflow
+            // (apply mappings, then apply --run-phases) actually runs
+            // phases on the newly-mapped projects from the prior run.
+            // Phases are idempotent.
+            if (flags.runPhases) {
+              mappedForPhases.push({
+                bc2Id: dumpProject.bc2Id,
+                localId: outcome.localProjectId,
+                name: decision.title,
+              });
+            }
             log(`${decision.bc2Id}: already_mapped (project=${outcome.localProjectId})`);
             break;
         }
