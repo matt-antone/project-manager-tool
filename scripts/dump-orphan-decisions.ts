@@ -1,7 +1,11 @@
 import { promises as fs } from "fs";
 import { resolve } from "path";
 import { config } from "dotenv";
-import { formatDecisionCsv } from "@/lib/imports/orphans/csv";
+import {
+  formatDecisionCsv,
+  parseCsvLine,
+  splitCsvRows,
+} from "@/lib/imports/orphans/csv";
 import type { OrphanDecision } from "@/lib/imports/orphans/types";
 
 config({ path: resolve(process.cwd(), ".env.local") });
@@ -27,40 +31,17 @@ function parseFlags(argv: string[]): DumpFlags {
   return flags;
 }
 
-function parseAuditLine(line: string): string[] {
-  // Reuse the same parser shape as csv.ts but inline a minimal version to avoid
-  // importing internal helpers. Fields here are simple enough that the tests
-  // exercise the outputs end-to-end.
-  const out: string[] = [];
-  let i = 0;
-  let field = "";
-  let inQuotes = false;
-  while (i < line.length) {
-    const c = line[i];
-    if (inQuotes) {
-      if (c === '"' && line[i + 1] === '"') { field += '"'; i += 2; continue; }
-      if (c === '"') { inQuotes = false; i++; continue; }
-      field += c; i++; continue;
-    }
-    if (c === '"' && field.length === 0) { inQuotes = true; i++; continue; }
-    if (c === ",") { out.push(field); field = ""; i++; continue; }
-    field += c; i++;
-  }
-  out.push(field);
-  return out;
-}
-
 export async function dumpOrphanDecisions(args: {
   auditCsvPath: string;
   outPath: string;
   force: boolean;
 }): Promise<{ count: number }> {
   const text = await fs.readFile(args.auditCsvPath, "utf8");
-  const rows = text.split(/\r?\n/).filter((r) => r.length > 0);
+  const rows = splitCsvRows(text);
   if (rows.length === 0) {
     throw new Error(`audit CSV is empty: ${args.auditCsvPath}`);
   }
-  const header = parseAuditLine(rows[0]).map((s) => s.trim().toLowerCase());
+  const header = parseCsvLine(rows[0]).map((s) => s.trim().toLowerCase());
   const idx = (n: string) => header.indexOf(n);
   const bc2 = idx("bc2_id");
   const name = idx("name");
@@ -82,7 +63,7 @@ export async function dumpOrphanDecisions(args: {
 
   const decisions: OrphanDecision[] = [];
   for (let r = 1; r < rows.length; r++) {
-    const fields = parseAuditLine(rows[r]);
+    const fields = parseCsvLine(rows[r]);
     if ((fields[status] ?? "").trim() !== "failed") continue;
     decisions.push({
       bc2Id: (fields[bc2] ?? "").trim(),

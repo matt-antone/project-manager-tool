@@ -14,7 +14,7 @@ function escapeField(v: string): string {
   return v;
 }
 
-function parseLine(line: string): string[] {
+export function parseCsvLine(line: string): string[] {
   const out: string[] = [];
   let i = 0;
   let field = "";
@@ -54,7 +54,7 @@ function parseLine(line: string): string[] {
   return out;
 }
 
-function splitRows(text: string): string[] {
+export function splitCsvRows(text: string): string[] {
   // Handle both LF and CRLF; preserve quoted newlines.
   const rows: string[] = [];
   let current = "";
@@ -98,10 +98,10 @@ export function parseDecisionCsv(text: string): ParseDecisionResult {
   const decisions: OrphanDecision[] = [];
   const errors: RowError[] = [];
 
-  const rows = splitRows(text);
+  const rows = splitCsvRows(text);
   if (rows.length === 0) return { decisions, errors };
 
-  const header = parseLine(rows[0]).map((s) => s.trim().toLowerCase());
+  const header = parseCsvLine(rows[0]).map((s) => s.trim().toLowerCase());
   for (const required of REQUIRED_COLS) {
     if (!header.includes(required)) {
       errors.push({
@@ -116,7 +116,7 @@ export function parseDecisionCsv(text: string): ParseDecisionResult {
   const idx = (name: string) => header.indexOf(name);
 
   for (let r = 1; r < rows.length; r++) {
-    const fields = parseLine(rows[r]);
+    const fields = parseCsvLine(rows[r]);
     const bc2Id = (fields[idx("bc2_id")] ?? "").trim();
     const decision: OrphanDecision = {
       bc2Id,
