@@ -15,6 +15,8 @@ import {
   finishJob,
   type Query,
 } from "@/lib/imports/migration/jobs";
+import { createDumpReader, type DumpReader } from "@/lib/imports/dump-reader";
+import { Bc2Client } from "@/lib/imports/bc2-client";
 
 config({ path: resolve(process.cwd(), ".env.local") });
 
@@ -164,9 +166,85 @@ export async function runApply(deps: ApplyDeps): Promise<number> {
   return exitCode;
 }
 
+function requireEnv(name: string): string {
+  const v = process.env[name];
+  if (!v) throw new Error(`Missing env var: ${name}`);
+  return v;
+}
+
+interface RawProject {
+  id: number;
+  name?: string;
+  archived?: boolean;
+  created_at?: string;
+  updated_at?: string;
+  description?: string;
+}
+
+async function readDumpProjects(dumpDir: string): Promise<Map<string, DumpProjectShape>> {
+  // Stub client for dump-only reading (no API fallback).
+  const stubClient = {
+    get: async () => {
+      throw new Error("apply-orphan-decisions: API fallback not supported");
+    },
+  } as unknown as Bc2Client;
+
+  const reader = createDumpReader({ dumpDir, client: stubClient, errors: new Set() });
+  const out = new Map<string, DumpProjectShape>();
+  for (const which of ["activeProjects", "archivedProjects"] as const) {
+    const r = await reader[which]();
+    const body = (Array.isArray(r.body) ? r.body : []) as RawProject[];
+    for (const p of body) {
+      out.set(String(p.id), {
+        bc2Id: p.id,
+        title: p.name ?? "",
+        archived: !!p.archived,
+        createdAt: p.created_at ?? null,
+        updatedAt: p.updated_at ?? null,
+        description: p.description ?? null,
+      });
+    }
+  }
+  return out;
+}
+
 async function main(): Promise<void> {
-  // Wired in Task 6 (mapping with real pg + applier) and Task 7 (phases).
-  throw new Error("apply-orphan-decisions: main() wired in Task 6/7");
+  const flags = parseFlags(process.argv.slice(2));
+
+  const pool = new Pool({ connectionString: requireEnv("DATABASE_URL") });
+  pool.on("error", (e) => {
+    console.warn(`[apply-orphan-decisions] pool client error (non-fatal): ${e.message}`);
+  });
+  const q: Query = (async <T>(text: string, values?: unknown[]) => {
+    const r = await pool.query(text, values);
+    return { rows: r.rows as T[] };
+  }) as Query;
+
+  let exit = 1;
+  try {
+    exit = await runApply({
+      flags,
+      readDecisionsFile: async () => {
+        const text = await fs.readFile(flags.decisionsPath, "utf8");
+        return parseDecisionCsv(text);
+      },
+      loadDumpProjects: () => readDumpProjects(flags.dumpDir),
+      createJob: () => createImportJob(q, { kind: "reconcile-orphan-projects", decisionsPath: flags.decisionsPath }),
+      finishJob: (jobId, status) => finishJob(q, jobId, status),
+      applyOne: ({ decision, dumpProject, jobId }) => {
+        if (flags.dryRun) {
+          return Promise.resolve({ status: "skipped" } as ApplyOutcome);
+        }
+        return applyDecision({ q, decision, dumpProject, jobId });
+      },
+      runPhasesForProjects: async () => ({ ok: 0, failed: 0 }),
+      log: (s) => console.log(s),
+      err: (s) => console.error(s),
+    });
+  } finally {
+    await pool.end();
+  }
+  process.exit(exit);
 }
 
 if (require.main === module) {
