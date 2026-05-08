@@ -102,116 +102,118 @@ async function main(): Promise<void> {
     return { rows: r.rows as T[] };
   }) as Query;
 
-  console.log("[audit-bc2-dump] loading DB state...");
-  const state = await loadDbState(q);
-  console.log(
-    `[audit-bc2-dump] db: people=${state.peopleMap.size} projects=${state.projectsMap.size} ` +
-    `threads=${state.threadsMap.size} comments=${state.commentsMap.size} ` +
-    `files=${state.filesMap.size} logs=${state.logs.size}`,
-  );
+  try {
+    console.log("[audit-bc2-dump] loading DB state...");
+    const state = await loadDbState(q);
+    console.log(
+      `[audit-bc2-dump] db: people=${state.peopleMap.size} projects=${state.projectsMap.size} ` +
+      `threads=${state.threadsMap.size} comments=${state.commentsMap.size} ` +
+      `files=${state.filesMap.size} logs=${state.logs.size}`,
+    );
 
-  const summary = emptySummary();
+    const summary = emptySummary();
 
-  // people
-  const peopleCsv = await openCsv(flags.outDir, "people.csv", [
-    "bc2_id", "email", "name", "status", "local_user_profile_id", "reason",
-  ]);
-  for (const p of await readPeople(flags.dumpDir)) {
-    const c = classifyEntity({ kind: "people", bc2Id: String(p.bc2Id), state });
-    bumpSummary(summary, "people", c.status);
-    peopleCsv.writeRow([p.bc2Id, p.email, p.name, c.status, c.localId, c.reason]);
-  }
-  await peopleCsv.close();
-
-  // projects
-  const projectsCsv = await openCsv(flags.outDir, "projects.csv", [
-    "bc2_id", "name", "archived", "status", "local_project_id", "reason",
-  ]);
-  const projects = await readProjects(flags.dumpDir);
-  for (const p of projects) {
-    const c = classifyEntity({ kind: "projects", bc2Id: String(p.bc2Id), state });
-    bumpSummary(summary, "projects", c.status);
-    projectsCsv.writeRow([p.bc2Id, p.name, p.archived, c.status, c.localId, c.reason]);
-  }
-  await projectsCsv.close();
-
-  // topics + comments + files (per project)
-  const topicsCsv = await openCsv(flags.outDir, "topics.csv", [
-    "bc2_project_id", "bc2_topic_id", "topicable_type", "title", "status", "local_thread_id", "reason",
-  ]);
-  const commentsCsv = await openCsv(flags.outDir, "comments.csv", [
-    "bc2_project_id", "bc2_topic_id", "bc2_comment_id", "status", "local_comment_id", "reason",
-  ]);
-  const filesCsv = await openCsv(flags.outDir, "files.csv", [
-    "bc2_project_id", "bc2_attachment_id", "filename", "byte_size", "status", "local_file_id", "reason",
-  ]);
-
-  const projectIds = await listProjectIds(flags.dumpDir);
-  const total = projectIds.length;
-  let pIdx = 0;
-  const startMs = Date.now();
-
-  for (const projectId of projectIds) {
-    pIdx++;
-    if (flags.verbose || pIdx % 100 === 0) {
-      const elapsed = Math.round((Date.now() - startMs) / 1000);
-      console.log(`[audit-bc2-dump] project ${pIdx}/${total} (${elapsed}s)`);
+    // people
+    const peopleCsv = await openCsv(flags.outDir, "people.csv", [
+      "bc2_id", "email", "name", "status", "local_user_profile_id", "reason",
+    ]);
+    for (const p of await readPeople(flags.dumpDir)) {
+      const c = classifyEntity({ kind: "people", bc2Id: String(p.bc2Id), state });
+      bumpSummary(summary, "people", c.status);
+      peopleCsv.writeRow([p.bc2Id, p.email, p.name, c.status, c.localId, c.reason]);
     }
+    await peopleCsv.close();
 
-    const topics = await readTopicsForProject(flags.dumpDir, projectId);
-    for (const t of topics) {
-      const c = classifyEntity({ kind: "topics", bc2Id: String(t.bc2TopicId), state });
-      bumpSummary(summary, "topics", c.status);
-      topicsCsv.writeRow([
-        t.bc2ProjectId, t.bc2TopicId, t.topicableType, t.title, c.status, c.localId, c.reason,
-      ]);
+    // projects
+    const projectsCsv = await openCsv(flags.outDir, "projects.csv", [
+      "bc2_id", "name", "archived", "status", "local_project_id", "reason",
+    ]);
+    const projects = await readProjects(flags.dumpDir);
+    for (const p of projects) {
+      const c = classifyEntity({ kind: "projects", bc2Id: String(p.bc2Id), state });
+      bumpSummary(summary, "projects", c.status);
+      projectsCsv.writeRow([p.bc2Id, p.name, p.archived, c.status, c.localId, c.reason]);
+    }
+    await projectsCsv.close();
 
-      const comments = await readCommentsForTopic(
-        flags.dumpDir, t.bc2ProjectId, t.topicableType, t.bc2TopicId,
-      );
-      for (const com of comments) {
-        const cc = classifyEntity({ kind: "comments", bc2Id: String(com.bc2CommentId), state });
-        bumpSummary(summary, "comments", cc.status);
-        commentsCsv.writeRow([
-          com.bc2ProjectId, com.bc2TopicId, com.bc2CommentId, cc.status, cc.localId, cc.reason,
+    // topics + comments + files (per project)
+    const topicsCsv = await openCsv(flags.outDir, "topics.csv", [
+      "bc2_project_id", "bc2_topic_id", "topicable_type", "title", "status", "local_thread_id", "reason",
+    ]);
+    const commentsCsv = await openCsv(flags.outDir, "comments.csv", [
+      "bc2_project_id", "bc2_topic_id", "bc2_comment_id", "status", "local_comment_id", "reason",
+    ]);
+    const filesCsv = await openCsv(flags.outDir, "files.csv", [
+      "bc2_project_id", "bc2_attachment_id", "filename", "byte_size", "status", "local_file_id", "reason",
+    ]);
+
+    const projectIds = await listProjectIds(flags.dumpDir);
+    const total = projectIds.length;
+    let pIdx = 0;
+    const startMs = Date.now();
+
+    for (const projectId of projectIds) {
+      pIdx++;
+      if (flags.verbose || pIdx % 100 === 0) {
+        const elapsed = Math.round((Date.now() - startMs) / 1000);
+        console.log(`[audit-bc2-dump] project ${pIdx}/${total} (${elapsed}s)`);
+      }
+
+      const topics = await readTopicsForProject(flags.dumpDir, projectId);
+      for (const t of topics) {
+        const c = classifyEntity({ kind: "topics", bc2Id: String(t.bc2TopicId), state });
+        bumpSummary(summary, "topics", c.status);
+        topicsCsv.writeRow([
+          t.bc2ProjectId, t.bc2TopicId, t.topicableType, t.title, c.status, c.localId, c.reason,
+        ]);
+
+        const comments = await readCommentsForTopic(
+          flags.dumpDir, t.bc2ProjectId, t.topicableType, t.bc2TopicId,
+        );
+        for (const com of comments) {
+          const cc = classifyEntity({ kind: "comments", bc2Id: String(com.bc2CommentId), state });
+          bumpSummary(summary, "comments", cc.status);
+          commentsCsv.writeRow([
+            com.bc2ProjectId, com.bc2TopicId, com.bc2CommentId, cc.status, cc.localId, cc.reason,
+          ]);
+        }
+      }
+
+      const attachments = await readAttachmentsForProject(flags.dumpDir, projectId);
+      for (const a of attachments) {
+        const c = classifyEntity({ kind: "files", bc2Id: String(a.bc2AttachmentId), state });
+        bumpSummary(summary, "files", c.status);
+        filesCsv.writeRow([
+          a.bc2ProjectId, a.bc2AttachmentId, a.filename, a.byteSize ?? "", c.status, c.localId, c.reason,
         ]);
       }
     }
 
-    const attachments = await readAttachmentsForProject(flags.dumpDir, projectId);
-    for (const a of attachments) {
-      const c = classifyEntity({ kind: "files", bc2Id: String(a.bc2AttachmentId), state });
-      bumpSummary(summary, "files", c.status);
-      filesCsv.writeRow([
-        a.bc2ProjectId, a.bc2AttachmentId, a.filename, a.byteSize ?? "", c.status, c.localId, c.reason,
-      ]);
+    await topicsCsv.close();
+    await commentsCsv.close();
+    await filesCsv.close();
+
+    // summary
+    const summaryCsv = await openCsv(flags.outDir, "summary.csv", [
+      "entity", "expected", "mapped", "accounted_skip", "accounted_fail", "unaccounted",
+    ]);
+    const order: EntityKind[] = ["people", "projects", "topics", "comments", "files"];
+    for (const kind of order) {
+      const c = summary[kind];
+      summaryCsv.writeRow([kind, c.expected, c.mapped, c.accountedSkip, c.accountedFail, c.unaccounted]);
     }
-  }
+    await summaryCsv.close();
 
-  await topicsCsv.close();
-  await commentsCsv.close();
-  await filesCsv.close();
-
-  // summary
-  const summaryCsv = await openCsv(flags.outDir, "summary.csv", [
-    "entity", "expected", "mapped", "accounted_skip", "accounted_fail", "unaccounted",
-  ]);
-  const order: EntityKind[] = ["people", "projects", "topics", "comments", "files"];
-  for (const kind of order) {
-    const c = summary[kind];
-    summaryCsv.writeRow([kind, c.expected, c.mapped, c.accountedSkip, c.accountedFail, c.unaccounted]);
-  }
-  await summaryCsv.close();
-
-  await pool.end();
-
-  console.log("[audit-bc2-dump] done.");
-  for (const kind of order) {
-    const c = summary[kind];
-    console.log(
-      `  ${kind.padEnd(9)} expected=${c.expected} mapped=${c.mapped} ` +
-      `skip=${c.accountedSkip} fail=${c.accountedFail} unaccounted=${c.unaccounted}`,
-    );
+    console.log("[audit-bc2-dump] done.");
+    for (const kind of order) {
+      const c = summary[kind];
+      console.log(
+        `  ${kind.padEnd(9)} expected=${c.expected} mapped=${c.mapped} ` +
+        `skip=${c.accountedSkip} fail=${c.accountedFail} unaccounted=${c.unaccounted}`,
+      );
+    }
+  } finally {
+    await pool.end();
   }
 }
 
