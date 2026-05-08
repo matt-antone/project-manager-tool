@@ -183,15 +183,16 @@ interface RawProject {
   description?: string;
 }
 
-async function readDumpProjects(dumpDir: string): Promise<Map<string, DumpProjectShape>> {
-  // Stub client for dump-only reading (no API fallback).
-  const stubClient = {
-    get: async () => {
-      throw new Error("apply-orphan-decisions: API fallback not supported");
-    },
-  } as unknown as Bc2Client;
+// Single dump-only client stub. Throws if anything ever tries the API
+// fallback — we expect the dump to be self-contained for orphan recon.
+const DUMP_ONLY_CLIENT = {
+  get: async () => {
+    throw new Error("apply-orphan-decisions: API fallback not supported");
+  },
+} as unknown as Bc2Client;
 
-  const reader = createDumpReader({ dumpDir, client: stubClient, errors: new Set() });
+async function readDumpProjects(dumpDir: string): Promise<Map<string, DumpProjectShape>> {
+  const reader = createDumpReader({ dumpDir, client: DUMP_ONLY_CLIENT, errors: new Set() });
   const out = new Map<string, DumpProjectShape>();
   for (const which of ["activeProjects", "archivedProjects"] as const) {
     const r = await reader[which]();
@@ -252,7 +253,7 @@ async function main(): Promise<void> {
 
         const reader = createDumpReader({
           dumpDir: flags.dumpDir,
-          client: { get: async () => { throw new Error("apply-orphan-decisions: API fallback not supported"); } } as unknown as Bc2Client,
+          client: DUMP_ONLY_CLIENT,
           errors: new Set(),
         });
         const downloadEnv = {
@@ -271,7 +272,13 @@ async function main(): Promise<void> {
             console.log(
               `phases ${m.bc2Id}: threads ok=${t.threads.success} fail=${t.threads.failed} skip=${t.threads.skipped} | files ok=${f.files.success} fail=${f.files.failed} skip=${f.files.skipped}`,
             );
-            ok++;
+            // Treat any internal phase failure as a project-level failure so
+            // the exit code reflects unfinished work, not just thrown errors.
+            if (t.threads.failed > 0 || f.files.failed > 0) {
+              failed++;
+            } else {
+              ok++;
+            }
           } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
             console.error(`phases ${m.bc2Id}: ${msg}`);
