@@ -173,3 +173,29 @@ describe("reconStrandedComments — unmapped project", () => {
     expect(result.totals.success).toBe(2);
   });
 });
+
+describe("reconStrandedComments — author fallback", () => {
+  it("uses dry_<id> for unmapped creator and dry_unknown when creator is absent", async () => {
+    const q = makeFakeQ([
+      (sql) => sql.includes("from import_map_projects")
+        ? { rows: [{ local_project_id: "lp" }], rowCount: 1 } : null,
+      (sql) => sql.includes("from import_map_threads")
+        ? { rows: [{ local_thread_id: "lt" }], rowCount: 1 } : null,
+      (sql) => sql.includes("from import_map_comments")
+        ? { rows: [], rowCount: 0 } : null,
+      (sql) => sql.startsWith("insert into import_map_comments") ? { rows: [], rowCount: 1 } : null,
+      (sql) => sql.startsWith("insert into import_logs") ? { rows: [], rowCount: 1 } : null,
+    ]);
+    const createComment = vi.fn().mockResolvedValue({ id: "lc" });
+
+    await reconStrandedComments({
+      q, jobId: "j", dumpDir: FIXTURE_DUMP,
+      projectIds: [103], personMap: new Map(), createComment,
+    });
+
+    expect(createComment.mock.calls.map((c) => c[0].authorUserId)).toEqual([
+      "dry_9999",
+      "dry_unknown",
+    ]);
+  });
+});
