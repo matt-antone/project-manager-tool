@@ -17,6 +17,7 @@
     "dump:orphan-decisions": "npx tsx scripts/dump-orphan-decisions.ts",
     "apply:orphan-decisions": "npx tsx scripts/apply-orphan-decisions.ts",
     "retry:failed-files": "npx tsx scripts/retry-failed-files.ts",
+    "recon:stranded-comments": "npx tsx scripts/recon-stranded-comments.ts",
     "audit:bc2-dump": "npx tsx scripts/audit-bc2-dump.ts",
     "dump:bc2": "npx tsx scripts/dump-bc2.ts",
     "backfill:bc2-file-linkage": "npx tsx scripts/backfill-bc2-file-linkage.ts",

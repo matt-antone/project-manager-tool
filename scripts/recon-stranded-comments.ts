@@ -1,6 +1,11 @@
 import { resolve } from "path";
 import { pathToFileURL } from "url";
 import { config } from "dotenv";
+import { Pool } from "pg";
+import { createImportJob, finishJob, type Query } from "@/lib/imports/migration/jobs";
+import { createComment } from "@/lib/repositories";
+import { reconStrandedComments } from "@/lib/imports/migration/stranded-comments";
+import { promises as fs } from "fs";
 
 config({ path: resolve(process.cwd(), ".env.local") });
 
@@ -48,8 +53,72 @@ export function parseFlags(argv: string[]): CliFlags {
 }
 
 async function main() {
-  // Wired up in Task 12.
-  throw new Error("main() not yet implemented");
+  const flags = parseFlags(process.argv.slice(2));
+
+  try {
+    await fs.stat(flags.dumpDir);
+  } catch {
+    throw new Error(`dump dir not found: ${flags.dumpDir}`);
+  }
+
+  if (!process.env.DATABASE_URL) {
+    throw new Error("DATABASE_URL is not set");
+  }
+  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  const q: Query = (async (sql: string, params?: unknown[]) => {
+    const result = await pool.query(sql, params);
+    return result as never;
+  }) as Query;
+
+  let jobId: string | null = null;
+  try {
+    const peopleRes = await q<{ basecamp_person_id: string; local_user_id: string }>(
+      "select basecamp_person_id, local_user_id from import_map_people",
+    );
+    const personMap = new Map<number, string>(
+      peopleRes.rows.map((r) => [Number(r.basecamp_person_id), r.local_user_id]),
+    );
+
+    jobId = await createImportJob(q, {
+      kind: "recon_stranded_comments",
+      projectIds: flags.projectIds,
+      dumpDir: flags.dumpDir,
+    });
+
+    const result = await reconStrandedComments({
+      q,
+      jobId,
+      dumpDir: flags.dumpDir,
+      projectIds: flags.projectIds,
+      personMap,
+      createComment: async (args) => {
+        const row = await createComment(args);
+        return row as { id: string };
+      },
+    });
+
+    console.log("== recon:stranded-comments summary ==");
+    for (const p of result.perProject) {
+      console.log(
+        `  bc2=${p.bc2Id} local=${p.localId ?? "(unmapped)"} ` +
+        `success=${p.success} failed=${p.failed} ` +
+        `already=${p.skipped.already_mapped} ` +
+        `orphan=${p.skipped.orphan_no_thread} ` +
+        `unsupported=${p.skipped.unsupported_topicable}`,
+      );
+    }
+    console.log(
+      `TOTALS success=${result.totals.success} failed=${result.totals.failed} ` +
+      `already=${result.totals.skipped_already_mapped} ` +
+      `orphan=${result.totals.skipped_orphan_no_thread} ` +
+      `unsupported=${result.totals.skipped_unsupported_topicable} ` +
+      `unmapped_projects=${result.totals.projects_skipped_unmapped}`,
+    );
+
+    await finishJob(q, jobId, "completed");
+  } finally {
+    await pool.end();
+  }
 }
 
 const isDirect = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
