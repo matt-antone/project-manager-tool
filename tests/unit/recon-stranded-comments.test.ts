@@ -82,3 +82,37 @@ describe("reconStrandedComments — idempotency", () => {
     expect(result.totals.skipped_already_mapped).toBe(2);
   });
 });
+
+describe("reconStrandedComments — orphan-no-thread", () => {
+  it("logs failed and skips when import_map_threads has no row", async () => {
+    const inserts: Array<{ sql: string; params: unknown[] }> = [];
+    const q = makeFakeQ([
+      (sql) => sql.includes("from import_map_projects")
+        ? { rows: [{ local_project_id: "lp" }], rowCount: 1 } : null,
+      (sql) => sql.includes("from import_map_threads")
+        ? { rows: [], rowCount: 0 } : null,
+      (sql) => sql.includes("from import_map_comments")
+        ? { rows: [], rowCount: 0 } : null,
+      (sql, p) => {
+        if (sql.startsWith("insert into import_logs")) {
+          inserts.push({ sql, params: p ?? [] });
+          return { rows: [], rowCount: 1 };
+        }
+        return null;
+      },
+    ]);
+    const createComment = vi.fn();
+
+    const result = await reconStrandedComments({
+      q, jobId: "j", dumpDir: FIXTURE_DUMP,
+      projectIds: [101], personMap: new Map(), createComment,
+    });
+
+    expect(createComment).not.toHaveBeenCalled();
+    expect(result.totals.skipped_orphan_no_thread).toBe(1);
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0].params).toEqual([
+      "j", "comment", "6001", "failed", "orphan_no_thread", "dump",
+    ]);
+  });
+});
