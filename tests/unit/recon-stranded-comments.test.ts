@@ -199,3 +199,24 @@ describe("reconStrandedComments — author fallback", () => {
     ]);
   });
 });
+
+describe("reconStrandedComments — missing detail", () => {
+  it("does not throw when topic detail JSON is missing and counts no work", async () => {
+    const q = makeFakeQ([
+      (sql) => sql.includes("from import_map_projects")
+        ? { rows: [{ local_project_id: "lp" }], rowCount: 1 } : null,
+      (sql) => sql.includes("from import_map_threads")
+        ? { rows: [{ local_thread_id: "lt" }], rowCount: 1 } : null,
+    ]);
+    const createComment = vi.fn();
+
+    const result = await reconStrandedComments({
+      q, jobId: "j", dumpDir: FIXTURE_DUMP,
+      projectIds: [104], personMap: new Map(), createComment,
+    });
+
+    expect(createComment).not.toHaveBeenCalled();
+    expect(result.totals.success).toBe(0);
+    expect(result.totals.failed).toBe(0);
+  });
+});
