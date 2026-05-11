@@ -7,6 +7,7 @@ import {
   readProjects,
   readTopicsForProject,
   readCommentsForTopic,
+  readCommentDetailsForTopic,
   readAttachmentsForProject,
   listProjectIds,
 } from "@/lib/imports/audit/reader";
@@ -67,5 +68,31 @@ describe("audit reader", () => {
     const ghostId = 9999;
     const topics = await readTopicsForProject(dumpDir, ghostId);
     expect(topics).toEqual([]);
+  });
+});
+
+describe("readCommentDetailsForTopic", () => {
+  const dumpDir = path.resolve(__dirname, "../fixtures/bc2-dump-stranded");
+
+  it("returns full comment payloads in dump order", async () => {
+    const result = await readCommentDetailsForTopic(dumpDir, 100, "Message", 200);
+    expect(result).toHaveLength(2);
+    expect(result[0]).toEqual({
+      id: 5001,
+      content: "First comment body",
+      creator: { id: 9001, name: "Alice" },
+      created_at: "2025-01-15T10:00:00.000Z",
+    });
+    expect(result[1].id).toBe(5002);
+  });
+
+  it("returns [] for unsupported topicable types", async () => {
+    const result = await readCommentDetailsForTopic(dumpDir, 100, "Calendar", 200);
+    expect(result).toEqual([]);
+  });
+
+  it("returns [] when detail JSON is missing", async () => {
+    const result = await readCommentDetailsForTopic(dumpDir, 100, "Message", 999);
+    expect(result).toEqual([]);
   });
 });

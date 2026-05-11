@@ -123,6 +123,27 @@ export async function readCommentsForTopic(
   }));
 }
 
+export interface CommentDetail {
+  id: number;
+  content?: string;
+  creator?: { id: number; name?: string };
+  created_at?: string;
+}
+
+export async function readCommentDetailsForTopic(
+  dumpDir: string,
+  projectId: number,
+  topicableType: string,
+  topicId: number,
+): Promise<CommentDetail[]> {
+  const segment = TOPICABLE_TYPE_TO_SEGMENT[topicableType];
+  if (!segment) return [];
+  const data = (await readJson<{ comments?: CommentDetail[] }>(
+    path.join(dumpDir, "by-project", String(projectId), segment, `${topicId}.json`),
+  )) ?? {};
+  return data.comments ?? [];
+}
+
 export async function readAttachmentsForProject(
   dumpDir: string,
   projectId: number,
