@@ -61,14 +61,18 @@ export async function upsertProjectInTest(
   }
   const clientId = clientLookup.rows[0].id;
 
+  const slug =
+    prod.slug ??
+    `${prod.client_slug ?? ""}-${prod.project_slug ?? ""}-${prod.id.slice(0, 8)}`;
+
   const insert = await testTx.query(
     `INSERT INTO projects
-      (project_code, client_slug, project_slug, name, archived, status,
+      (project_code, client_slug, project_slug, slug, name, archived, status,
        client_id, created_at, updated_at, last_activity_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
      RETURNING id`,
     [
-      prod.project_code, prod.client_slug, prod.project_slug, prod.name,
+      prod.project_code, prod.client_slug, prod.project_slug, slug, prod.name,
       prod.archived, prod.status, clientId,
       prod.created_at, prod.updated_at, prod.last_activity_at,
     ],

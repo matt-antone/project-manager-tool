@@ -13,6 +13,7 @@ export interface ProdProjectRow {
   project_code: string | null;
   client_slug: string | null;
   project_slug: string | null;
+  slug: string | null;
   name: string | null;
   archived: boolean;
   status: string | null;
