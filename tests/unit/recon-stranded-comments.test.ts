@@ -220,3 +220,28 @@ describe("reconStrandedComments — missing detail", () => {
     expect(result.totals.failed).toBe(0);
   });
 });
+
+describe("reconStrandedComments — insert order", () => {
+  it("invokes createComment in ascending created_at order", async () => {
+    const q = makeFakeQ([
+      (sql) => sql.includes("from import_map_projects")
+        ? { rows: [{ local_project_id: "lp" }], rowCount: 1 } : null,
+      (sql) => sql.includes("from import_map_threads")
+        ? { rows: [{ local_thread_id: "lt" }], rowCount: 1 } : null,
+      (sql) => sql.includes("from import_map_comments")
+        ? { rows: [], rowCount: 0 } : null,
+      (sql) => sql.startsWith("insert into import_map_comments") ? { rows: [], rowCount: 1 } : null,
+      (sql) => sql.startsWith("insert into import_logs") ? { rows: [], rowCount: 1 } : null,
+    ]);
+    const createComment = vi.fn().mockResolvedValue({ id: "lc" });
+
+    await reconStrandedComments({
+      q, jobId: "j", dumpDir: FIXTURE_DUMP,
+      projectIds: [105], personMap: new Map([[9001, "u1"]]), createComment,
+    });
+
+    expect(createComment.mock.calls.map((c) => c[0].bodyMarkdown)).toEqual([
+      "first", "second", "third",
+    ]);
+  });
+});
