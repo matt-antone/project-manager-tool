@@ -128,25 +128,41 @@ export async function reconStrandedComments(deps: ReconStrandedCommentsDeps): Pr
         const authorUserId = (creatorId != null ? personMap.get(creatorId) : undefined)
           ?? `dry_${creatorId ?? "unknown"}`;
 
-        const created = await createComment({
-          projectId: localId,
-          threadId: threadLocalId,
-          bodyMarkdown: cmt.content ?? "",
-          authorUserId,
-          sourceCreatedAt: parseBc2IsoTimestamptz(cmt.created_at) ?? undefined,
-        });
-        await q(
-          "insert into import_map_comments (basecamp_comment_id, local_comment_id) values ($1, $2)",
-          [String(cmt.id), created.id],
-        );
-        await logRecord(q, {
-          jobId,
-          recordType: "comment",
-          sourceId: String(cmt.id),
-          status: "success",
-          dataSource: "dump",
-        });
-        summary.success++;
+        try {
+          const created = await createComment({
+            projectId: localId,
+            threadId: threadLocalId,
+            bodyMarkdown: cmt.content ?? "",
+            authorUserId,
+            sourceCreatedAt: parseBc2IsoTimestamptz(cmt.created_at) ?? undefined,
+          });
+          try {
+            await q(
+              "insert into import_map_comments (basecamp_comment_id, local_comment_id) values ($1, $2)",
+              [String(cmt.id), created.id],
+            );
+          } catch (mapErr) {
+            const code = (mapErr as { code?: string }).code;
+            if (code === "23505") {
+              summary.skipped.already_mapped++;
+              continue;
+            }
+            throw mapErr;
+          }
+          await logRecord(q, {
+            jobId, recordType: "comment", sourceId: String(cmt.id),
+            status: "success", dataSource: "dump",
+          });
+          summary.success++;
+        } catch (err) {
+          await logRecord(q, {
+            jobId, recordType: "comment", sourceId: String(cmt.id),
+            status: "failed",
+            message: err instanceof Error ? err.message : String(err),
+            dataSource: "dump",
+          });
+          summary.failed++;
+        }
       }
     }
 

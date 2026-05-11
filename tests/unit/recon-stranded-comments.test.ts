@@ -245,3 +245,35 @@ describe("reconStrandedComments — insert order", () => {
     ]);
   });
 });
+
+describe("reconStrandedComments — unique-violation safety net", () => {
+  it("treats PG 23505 on import_map_comments insert as already-mapped", async () => {
+    const q = makeFakeQ([
+      (sql) => sql.includes("from import_map_projects")
+        ? { rows: [{ local_project_id: "lp" }], rowCount: 1 } : null,
+      (sql) => sql.includes("from import_map_threads")
+        ? { rows: [{ local_thread_id: "lt" }], rowCount: 1 } : null,
+      (sql) => sql.includes("from import_map_comments")
+        ? { rows: [], rowCount: 0 } : null,
+      (sql) => {
+        if (sql.startsWith("insert into import_map_comments")) {
+          const err = new Error("duplicate key value violates unique constraint") as Error & { code?: string };
+          err.code = "23505";
+          throw err;
+        }
+        return null;
+      },
+      (sql) => sql.startsWith("insert into import_logs") ? { rows: [], rowCount: 1 } : null,
+    ]);
+    const createComment = vi.fn().mockResolvedValue({ id: "lc" });
+
+    const result = await reconStrandedComments({
+      q, jobId: "j", dumpDir: FIXTURE_DUMP,
+      projectIds: [100], personMap: new Map([[9001, "u1"], [9002, "u2"]]), createComment,
+    });
+
+    expect(result.totals.failed).toBe(0);
+    expect(result.totals.skipped_already_mapped).toBe(2);
+    expect(result.totals.success).toBe(0);
+  });
+});
