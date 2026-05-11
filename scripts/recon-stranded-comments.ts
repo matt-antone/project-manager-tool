@@ -72,11 +72,11 @@ async function main() {
 
   let jobId: string | null = null;
   try {
-    const peopleRes = await q<{ basecamp_person_id: string; local_user_id: string }>(
-      "select basecamp_person_id, local_user_id from import_map_people",
+    const peopleRes = await q<{ basecamp_person_id: string; local_user_profile_id: string }>(
+      "select basecamp_person_id, local_user_profile_id from import_map_people",
     );
     const personMap = new Map<number, string>(
-      peopleRes.rows.map((r) => [Number(r.basecamp_person_id), r.local_user_id]),
+      peopleRes.rows.map((r) => [Number(r.basecamp_person_id), r.local_user_profile_id]),
     );
 
     jobId = await createImportJob(q, {
