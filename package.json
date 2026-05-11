@@ -17,7 +17,8 @@
     "dump:bc2": "npx tsx scripts/dump-bc2.ts",
     "backfill:bc2-file-linkage": "npx tsx scripts/backfill-bc2-file-linkage.ts",
     "db:reset-bc2-data": "npx tsx scripts/reset-bc2-import-data.ts --yes",
-    "mcp:mint-jwt": "node scripts/mint-mcp-jwt.mjs"
+    "mcp:mint-jwt": "node scripts/mint-mcp-jwt.mjs",
+    "sync:prod-to-test": "tsx scripts/sync-prod-to-test.ts"
   },
   "dependencies": {
     "@mdxeditor/editor": "^3.52.5",
