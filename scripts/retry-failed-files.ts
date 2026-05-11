@@ -3,6 +3,14 @@ import { resolve } from "path";
 import { pathToFileURL } from "url";
 import { config } from "dotenv";
 import { parseCsvLine, splitCsvRows } from "@/lib/imports/orphans/csv";
+import { Pool } from "pg";
+import { createDumpReader } from "@/lib/imports/dump-reader";
+import { Bc2Client } from "@/lib/imports/bc2-client";
+import { importBc2FileFromAttachment } from "@/lib/imports/bc2-migrate-single-file";
+import { resolveBc2AttachmentLinkage } from "@/lib/imports/bc2-attachment-linkage";
+import { createImportJob, finishJob, type Query } from "@/lib/imports/migration/jobs";
+import { DropboxStorageAdapter } from "@/lib/storage/dropbox-adapter";
+import { createFileMetadata } from "@/lib/repositories";
 
 config({ path: resolve(process.cwd(), ".env.local") });
 
@@ -220,9 +228,132 @@ export async function runRetry(deps: RetryDeps): Promise<number> {
   return exitCode;
 }
 
+function requireEnv(name: string): string {
+  const v = process.env[name];
+  if (!v) throw new Error(`Missing env var: ${name}`);
+  return v;
+}
+
+const DUMP_ONLY_CLIENT = {
+  get: async () => {
+    throw new Error("retry-failed-files: API fallback not supported");
+  },
+} as unknown as Bc2Client;
+
+async function noopLogRecord(): Promise<void> {
+  return;
+}
+
+async function noopIncrementCounters(): Promise<void> {
+  return;
+}
+
 async function main(): Promise<void> {
-  // Wired in Task 3 (real pg + dump reader + dropbox adapter).
-  throw new Error("retry-failed-files: main() wired in Task 3");
+  const flags = parseFlags(process.argv.slice(2));
+
+  const pool = new Pool({ connectionString: requireEnv("DATABASE_URL") });
+  pool.on("error", (e) => {
+    console.warn(`[retry-failed-files] pool client error (non-fatal): ${e.message}`);
+  });
+  const q: Query = (async <T>(text: string, values?: unknown[]) => {
+    const r = await pool.query(text, values);
+    return { rows: r.rows as T[] };
+  }) as Query;
+
+  const adapter = new DropboxStorageAdapter();
+  const downloadEnv = {
+    username: requireEnv("BASECAMP_USERNAME"),
+    password: requireEnv("BASECAMP_PASSWORD"),
+    userAgent: process.env.BASECAMP_USER_AGENT ?? requireEnv("BC2_USER_AGENT"),
+  };
+
+  const reader = createDumpReader({
+    dumpDir: flags.dumpDir,
+    client: DUMP_ONLY_CLIENT,
+    errors: new Set(),
+  });
+
+  let exit = 1;
+  try {
+    exit = await runRetry({
+      flags,
+      readFailedFileRows: () => readFailedFiles(flags.auditCsvPath),
+      loadProjectInfo: async (bc2ProjectId) => {
+        const r = await q<{
+          local_project_id: string;
+          name: string;
+          storage_project_dir: string | null;
+          archived: boolean | null;
+        }>(
+          `select m.local_project_id, p.name, p.storage_project_dir, p.archived
+             from import_map_projects m
+             join projects p on p.id = m.local_project_id
+            where m.basecamp_project_id = $1`,
+          [bc2ProjectId],
+        );
+        const row = r.rows[0];
+        if (!row) return null;
+        return {
+          bc2Id: Number(bc2ProjectId),
+          localId: row.local_project_id,
+          name: row.name,
+          storageDir: row.storage_project_dir ?? "",
+          archived: !!row.archived,
+        };
+      },
+      loadProjectAttachments: async (bc2ProjectId) => {
+        const res = await reader.attachments(Number(bc2ProjectId));
+        const body = (Array.isArray(res.body) ? res.body : []) as Bc2Attachment[];
+        return body;
+      },
+      loadPersonMap: async () => {
+        const r = await q<{ basecamp_person_id: string; local_user_profile_id: string }>(
+          "select basecamp_person_id, local_user_profile_id from import_map_people",
+        );
+        const m = new Map<number, string>();
+        for (const row of r.rows) m.set(Number(row.basecamp_person_id), row.local_user_profile_id);
+        return m;
+      },
+      createJob: (attemptCount) =>
+        createImportJob(q, {
+          kind: "retry-failed-files",
+          count: attemptCount,
+          auditCsvPath: flags.auditCsvPath,
+        }),
+      finishJob: (jobId, status) => finishJob(q, jobId, status),
+      importOne: async ({ project, attachment, personMap, jobId }) => {
+        const { threadId, commentId } = await resolveBc2AttachmentLinkage(q, attachment);
+        const result = await importBc2FileFromAttachment({
+          query: q,
+          jobId,
+          projectLocalId: project.localId,
+          storageDir: project.storageDir,
+          personMap,
+          attachment,
+          threadId,
+          commentId,
+          downloadEnv,
+          adapter,
+          createFileMetadata,
+          logRecord: noopLogRecord,
+          incrementCounters: noopIncrementCounters,
+          projectArchived: project.archived,
+        });
+        if (result.status === "imported") {
+          return { status: "imported", localFileId: result.localFileId };
+        }
+        if (result.status === "skipped_existing") {
+          return { status: "skipped_existing", localFileId: result.localFileId };
+        }
+        return { status: "failed", error: result.error };
+      },
+      log: (s) => console.log(s),
+      err: (s) => console.error(s),
+    });
+  } finally {
+    await pool.end();
+  }
+  process.exit(exit);
 }
 
 const isEntry =
