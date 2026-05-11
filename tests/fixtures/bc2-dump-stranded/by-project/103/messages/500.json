@@ -1,0 +1,7 @@
+{
+  "id": 500,
+  "comments": [
+    { "id": 7001, "content": "c1", "creator": { "id": 9999 }, "created_at": "2025-01-01T00:00:00.000Z" },
+    { "id": 7002, "content": "c2", "created_at": "2025-01-01T00:01:00.000Z" }
+  ]
+}
