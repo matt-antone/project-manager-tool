@@ -65,15 +65,19 @@ export async function upsertProjectInTest(
     prod.slug ??
     `${prod.client_slug ?? ""}-${prod.project_slug ?? ""}-${prod.id.slice(0, 8)}`;
 
+  if (!prod.created_by) {
+    throw new Error(`prod.created_by is null for project_code=${prod.project_code ?? prod.id} — cannot insert`);
+  }
+
   const insert = await testTx.query(
     `INSERT INTO projects
       (project_code, client_slug, project_slug, slug, name, archived, status,
-       client_id, created_at, updated_at, last_activity_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       client_id, created_by, created_at, updated_at, last_activity_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
      RETURNING id`,
     [
       prod.project_code, prod.client_slug, prod.project_slug, slug, prod.name,
-      prod.archived, prod.status, clientId,
+      prod.archived, prod.status, clientId, prod.created_by,
       prod.created_at, prod.updated_at, prod.last_activity_at,
     ],
   );

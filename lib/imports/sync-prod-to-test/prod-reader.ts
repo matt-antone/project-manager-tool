@@ -26,7 +26,7 @@ export function createProdReader(prod: Pool): ProdReader {
         UNION SELECT DISTINCT project_id FROM discussion_comments WHERE created_at >= $1
       )
       SELECT p.id, p.project_code, p.client_slug, p.project_slug, p.slug, p.name, p.archived, p.status,
-             p.client_id, c.code AS client_code, c.name AS client_name,
+             p.client_id, p.created_by, c.code AS client_code, c.name AS client_name,
              p.created_at, p.updated_at, p.last_activity_at
         FROM projects p
         JOIN activity a ON a.project_id = p.id

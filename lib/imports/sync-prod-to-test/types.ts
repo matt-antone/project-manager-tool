@@ -18,6 +18,7 @@ export interface ProdProjectRow {
   archived: boolean;
   status: string | null;
   client_id: string;
+  created_by: string | null;
   client_code: string | null;
   client_name: string | null;
   created_at: Date;

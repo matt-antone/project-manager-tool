@@ -42,6 +42,49 @@ export interface TestProjectMatch {
   match_kind: "by_basecamp_id" | "exact_code" | "padded_code" | "slug_name";
 }
 
+export async function resolveTestThreadIdForProdThread(
+  prod: Pool,
+  test: Pool,
+  prodThreadId: string,
+): Promise<string | null> {
+  // Get prod's basecamp_thread_id (if any) for this prod thread row.
+  const r = await prod.query(
+    `SELECT m.basecamp_thread_id
+       FROM import_map_threads m
+       WHERE m.local_thread_id = $1
+       LIMIT 1`,
+    [prodThreadId],
+  );
+  const bc = r.rows[0]?.basecamp_thread_id ?? null;
+  const lookupKey = bc ?? `prod_native_${prodThreadId}`;
+  const t = await test.query(
+    `SELECT local_thread_id FROM import_map_threads WHERE basecamp_thread_id = $1 LIMIT 1`,
+    [lookupKey],
+  );
+  return t.rows[0]?.local_thread_id ?? null;
+}
+
+export async function resolveTestCommentIdForProdComment(
+  prod: Pool,
+  test: Pool,
+  prodCommentId: string,
+): Promise<string | null> {
+  const r = await prod.query(
+    `SELECT m.basecamp_comment_id
+       FROM import_map_comments m
+       WHERE m.local_comment_id = $1
+       LIMIT 1`,
+    [prodCommentId],
+  );
+  const bc = r.rows[0]?.basecamp_comment_id ?? null;
+  const lookupKey = bc ?? `prod_native_${prodCommentId}`;
+  const t = await test.query(
+    `SELECT local_comment_id FROM import_map_comments WHERE basecamp_comment_id = $1 LIMIT 1`,
+    [lookupKey],
+  );
+  return t.rows[0]?.local_comment_id ?? null;
+}
+
 export async function findTestProjectMatch(
   test: Pool,
   bcProjectIds: string[],

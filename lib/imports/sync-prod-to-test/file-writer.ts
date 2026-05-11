@@ -11,7 +11,11 @@
 // and lets the orchestrator call enqueueThumbnailJobAndNotifyBestEffort AFTER commit.
 import type { Pool, PoolClient } from "pg";
 import type { ProdFileRow } from "./types";
-import { findTestUserIdForBc2Placeholder } from "./identity";
+import {
+  findTestUserIdForBc2Placeholder,
+  resolveTestThreadIdForProdThread,
+  resolveTestCommentIdForProdComment,
+} from "./identity";
 import { copyProdFileToTestRoot, type CopyResult } from "./dropbox-copy";
 
 export type FileWriteResult =
@@ -39,6 +43,7 @@ export async function writeFile(
   testCommentIdMap: Map<string, string | null>,
   prodFile: ProdFileRow,
   opts: WriteFileOpts,
+  prodPool: Pool,
 ): Promise<{ result: FileWriteResult; test_file_id: string | null; copy: CopyResult | null }> {
   const lookupKey = prodFile.basecamp_file_id ?? `prod_native_${prodFile.id}`;
   const existing = await testTx.query(
@@ -77,6 +82,34 @@ export async function writeFile(
     prodFile.uploader_user_id,
   );
 
+  // Resolve thread_id: try in-run map first, then fall back to test import_map_threads.
+  let testThreadId: string | null = null;
+  if (prodFile.thread_id) {
+    if (testThreadIdMap.has(prodFile.thread_id)) {
+      testThreadId = testThreadIdMap.get(prodFile.thread_id) ?? null;
+    } else {
+      testThreadId = await resolveTestThreadIdForProdThread(
+        prodPool,
+        asPoolLike(testTx),
+        prodFile.thread_id,
+      );
+    }
+  }
+
+  // Resolve comment_id: try in-run map first, then fall back to test import_map_comments.
+  let testCommentId: string | null = null;
+  if (prodFile.comment_id) {
+    if (testCommentIdMap.has(prodFile.comment_id)) {
+      testCommentId = testCommentIdMap.get(prodFile.comment_id) ?? null;
+    } else {
+      testCommentId = await resolveTestCommentIdForProdComment(
+        prodPool,
+        asPoolLike(testTx),
+        prodFile.comment_id,
+      );
+    }
+  }
+
   const ins = await testTx.query(
     `INSERT INTO project_files
        (project_id, thread_id, comment_id, uploader_user_id,
@@ -87,8 +120,8 @@ export async function writeFile(
      RETURNING id`,
     [
       testProjectId,
-      prodFile.thread_id ? (testThreadIdMap.get(prodFile.thread_id) ?? null) : null,
-      prodFile.comment_id ? (testCommentIdMap.get(prodFile.comment_id) ?? null) : null,
+      testThreadId,
+      testCommentId,
       uploader,
       prodFile.filename,
       prodFile.mime_type,

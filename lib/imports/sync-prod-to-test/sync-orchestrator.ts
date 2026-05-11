@@ -67,17 +67,20 @@ export async function runSync(deps: OrchestratorDeps, ctx: SyncRunContext): Prom
       const comments = await reader.commentsPostCutoff(p.id, ctx.cutoff);
       const commentMap = new Map<string, string | null>();
       for (const c of comments) {
-        const r = await writeComment(tx, upsert.test_project_id, threadMap, c);
+        const r = await writeComment(tx, upsert.test_project_id, threadMap, c, deps.prod);
         commentMap.set(c.id, r.test_comment_id);
         if (r.result === "inserted") outcome.comments_inserted++;
-        else outcome.comments_skipped_existing++;
+        else if (r.result === "skipped_existing") outcome.comments_skipped_existing++;
+        else if (r.result === "error_missing_thread") {
+          outcome.errors.push(r.error ?? `comment ${c.id} missing thread`);
+        }
       }
 
       const files = await reader.filesPostCutoff(p.id, ctx.cutoff);
       for (const f of files) {
         const r = await writeFile(tx, upsert.test_project_id, threadMap, commentMap, f, {
           dryRun: ctx.dryRun, skipFiles: ctx.skipFiles,
-        });
+        }, deps.prod);
         if (r.result === "inserted") outcome.files_inserted++;
         else if (r.result === "skipped_existing" || r.result === "skipped_dry_run") outcome.files_skipped_existing++;
         else if (r.result === "failed_copy") {
