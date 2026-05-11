@@ -14,6 +14,7 @@
     "seed:dummy-projects": "node --env-file=.env.local scripts/seed-dummy-projects.mjs",
     "migrate:active": "npx tsx scripts/migrate-bc2.ts --mode=full --projects=active --files",
     "migrate:from-dump": "npx tsx scripts/migrate-from-dump.ts",
+    "audit:bc2-dump": "npx tsx scripts/audit-bc2-dump.ts",
     "dump:bc2": "npx tsx scripts/dump-bc2.ts",
     "backfill:bc2-file-linkage": "npx tsx scripts/backfill-bc2-file-linkage.ts",
     "db:reset-bc2-data": "npx tsx scripts/reset-bc2-import-data.ts --yes",
