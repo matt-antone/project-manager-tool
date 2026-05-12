@@ -33,11 +33,17 @@ export async function runThreadsPhase(ctx: PhaseCtx): Promise<PhaseResult> {
 
   const limitClause = limit ? ` limit ${Math.max(1, Math.floor(limit))}` : "";
   const sql =
-    `select id, project_id, title, body_markdown, body_html, author_user_id, edited_at, created_at
-       from discussion_threads
-       where created_at > $1
-         and project_id <> all($2::uuid[])
-       order by created_at asc, id asc` + limitClause;
+    `select t.id, t.project_id, t.title, t.body_markdown, t.body_html, t.author_user_id, t.edited_at, t.created_at
+       from discussion_threads t
+       where t.created_at > $1
+         and exists (
+           select 1 from projects p
+            where p.id = t.project_id
+              and p.archived = false
+              and (p.status is null or p.status <> 'complete')
+         )
+         and t.project_id <> all($2::uuid[])
+       order by t.created_at asc, t.id asc` + limitClause;
   const prodRes = await ctx.prod.query<ProdThreadRow>(sql, [watermark, matchedProdProjectIds]);
 
   let inserted = 0;

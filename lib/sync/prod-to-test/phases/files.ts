@@ -61,13 +61,19 @@ export async function runFilesPhase(ctx: PhaseCtx, deps: FilesPhaseDeps = {}): P
 
   const limitClause = limit ? ` limit ${Math.max(1, Math.floor(limit))}` : "";
   const sql =
-    `select id, project_id, thread_id, comment_id, uploader_user_id, filename, mime_type,
-            size_bytes, dropbox_file_id, dropbox_path, checksum, thumbnail_url, bc_attachment_id,
-            created_at
-       from project_files
-       where created_at > $1
-         and project_id <> all($2::uuid[])
-       order by created_at asc, id asc` + limitClause;
+    `select t.id, t.project_id, t.thread_id, t.comment_id, t.uploader_user_id, t.filename, t.mime_type,
+            t.size_bytes, t.dropbox_file_id, t.dropbox_path, t.checksum, t.thumbnail_url, t.bc_attachment_id,
+            t.created_at
+       from project_files t
+       where t.created_at > $1
+         and exists (
+           select 1 from projects p
+            where p.id = t.project_id
+              and p.archived = false
+              and (p.status is null or p.status <> 'complete')
+         )
+         and t.project_id <> all($2::uuid[])
+       order by t.created_at asc, t.id asc` + limitClause;
   const prodRes = await ctx.prod.query<ProdFileRow>(sql, [watermark, matchedProdProjectIds]);
 
   let inserted = 0;

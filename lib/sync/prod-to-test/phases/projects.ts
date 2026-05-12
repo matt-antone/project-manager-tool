@@ -52,6 +52,8 @@ export async function runProjectsPhase(ctx: PhaseCtx): Promise<PhaseResult> {
             created_at
        from projects
        where created_at > $1
+         and archived = false
+         and (status is null or status <> 'complete')
        order by created_at asc, id asc` +
     (limit ? ` limit ${Math.max(1, Math.floor(limit))}` : "");
   const prodRes = await ctx.prod.query<ProdProjectRow>(sql, [watermark]);
