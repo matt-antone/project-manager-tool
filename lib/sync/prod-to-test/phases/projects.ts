@@ -77,7 +77,7 @@ export async function runProjectsPhase(ctx: PhaseCtx): Promise<PhaseResult> {
 
       // Try match by project_code first.
       let localId: string | null = null;
-      let matchedExisting = false;
+      let insertedNewRow = false;
 
       if (row.project_code) {
         const byCode = await ctx.test.query<{ id: string }>(
@@ -86,7 +86,6 @@ export async function runProjectsPhase(ctx: PhaseCtx): Promise<PhaseResult> {
         );
         if (byCode.rows.length > 0) {
           localId = byCode.rows[0].id;
-          matchedExisting = true;
         }
       }
 
@@ -143,8 +142,12 @@ export async function runProjectsPhase(ctx: PhaseCtx): Promise<PhaseResult> {
             throw e;
           }
         }
+        insertedNewRow = true;
       }
 
+      // matched_existing derived solely from whether doInsert() ran — single source of truth.
+      const matchedExisting = !insertedNewRow;
+      ctx.log(`[projects] map prod=${row.id} local=${localId} matched_existing=${matchedExisting}`);
       await ctx.test.query(
         "insert into import_map_prod_projects (prod_id, local_id, matched_existing) values ($1, $2, $3)",
         [row.id, localId, matchedExisting]

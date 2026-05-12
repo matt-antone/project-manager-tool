@@ -129,6 +129,46 @@ describe("runProjectsPhase", () => {
     expect(mapInsert!.params[2]).toBe(true);
   });
 
+  it("matched_existing reflects whether INSERT actually ran (two scenarios)", async () => {
+    // Scenario A: code match → no INSERT → matched_existing=true
+    {
+      const ctx = makeCtx();
+      (ctx.prod.query as any).mockResolvedValue({ rows: [sampleProdProject] });
+      const seen: Array<{ sql: string; params: any[] }> = [];
+      (ctx.test as any).query = vi.fn((sql: string, params: any[] = []) => {
+        seen.push({ sql, params });
+        if (/from import_map_prod_projects/i.test(sql)) return { rows: [] };
+        if (/from projects where.*project_code/i.test(sql)) {
+          return { rows: [{ id: "existing-uuid" }] };
+        }
+        return { rows: [] };
+      });
+      await runProjectsPhase(ctx);
+      const mapInsert = seen.find((s) => /insert into import_map_prod_projects/i.test(s.sql));
+      expect(mapInsert!.params[2]).toBe(true); // matched_existing = true when INSERT did NOT run
+      expect(seen.some((s) => /insert into projects\b/i.test(s.sql))).toBe(false);
+    }
+
+    // Scenario B: no code match → INSERT runs → matched_existing=false
+    {
+      const ctx = makeCtx();
+      (ctx.prod.query as any).mockResolvedValue({ rows: [sampleProdProject] });
+      const seen: Array<{ sql: string; params: any[] }> = [];
+      (ctx.test as any).query = vi.fn((sql: string, params: any[] = []) => {
+        seen.push({ sql, params });
+        if (/from import_map_prod_projects/i.test(sql)) return { rows: [] };
+        if (/from projects where.*project_code/i.test(sql)) return { rows: [] };
+        if (/from import_map_prod_clients/i.test(sql)) return { rows: [{ local_id: "lc" }] };
+        if (/from import_map_prod_users/i.test(sql)) return { rows: [{ local_id: "lu" }] };
+        return { rows: [] };
+      });
+      await runProjectsPhase(ctx);
+      const mapInsert = seen.find((s) => /insert into import_map_prod_projects/i.test(s.sql));
+      expect(mapInsert!.params[2]).toBe(false); // matched_existing = false when INSERT ran
+      expect(seen.some((s) => /insert into projects\b/i.test(s.sql))).toBe(true);
+    }
+  });
+
   it("matches by project_code across zero-padding drift (prod ALG-005 matches test ALG-0005)", async () => {
     const ctx = makeCtx();
     const prodRow = { ...sampleProdProject, project_code: "ALG-005" };

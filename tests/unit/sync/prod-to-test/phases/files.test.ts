@@ -148,4 +148,16 @@ describe("runFilesPhase", () => {
     const prodCall = (ctx.prod.query as any).mock.calls[0];
     expect(prodCall[1][1]).toEqual(["matched-prod-p1"]);
   });
+
+  it("prod SELECT SQL contains active-job filter clauses", async () => {
+    const ctx = makeCtx();
+    (ctx.prod.query as any).mockResolvedValue({ rows: [] });
+    (ctx.test as any).query = vi.fn(() => ({ rows: [] }));
+
+    await runFilesPhase(ctx, makeDeps({ ok: true, newId: "n", newPath: "n" }));
+
+    const prodSql: string = (ctx.prod.query as any).mock.calls[0][0];
+    expect(prodSql).toMatch(/archived = false/);
+    expect(prodSql).toMatch(/<> 'complete'/);
+  });
 });
