@@ -79,7 +79,7 @@ export async function runProjectsPhase(ctx: PhaseCtx): Promise<PhaseResult> {
 
       if (row.project_code) {
         const byCode = await ctx.test.query<{ id: string }>(
-          "select id from projects where lower(project_code) = lower($1) limit 1",
+          String.raw`select id from projects where regexp_replace(lower(project_code), '^([a-z]+)-0*([0-9]+[a-z]?)$', '\1-\2') = regexp_replace(lower($1), '^([a-z]+)-0*([0-9]+[a-z]?)$', '\1-\2') limit 1`,
           [row.project_code]
         );
         if (byCode.rows.length > 0) {
