@@ -50,6 +50,8 @@ describe("runProjectsPhase", () => {
     (ctx.test as any).query = vi.fn((sql: string, params: any[] = []) => {
       seen.push({ sql, params });
       if (/from import_map_prod_projects/i.test(sql)) return { rows: [] };
+      // Match-by-code lookup returns empty → falls through to INSERT.
+      if (/from projects where lower\(project_code\)/i.test(sql)) return { rows: [] };
       if (/from import_map_prod_clients/i.test(sql)) {
         return { rows: [{ local_id: "local-client-1" }] };
       }
@@ -66,6 +68,10 @@ describe("runProjectsPhase", () => {
     expect(insertProj).toBeTruthy();
     expect(insertProj!.params).toContain("local-client-1");
     expect(insertProj!.params).toContain("local-user-1");
+    // map row should have matched_existing = false
+    const mapInsert = seen.find((s) => /insert into import_map_prod_projects/i.test(s.sql));
+    expect(mapInsert).toBeTruthy();
+    expect(mapInsert!.params[2]).toBe(false);
   });
 
   it("retries with -p<prefix> suffix on slug/project_code unique violation", async () => {
@@ -75,6 +81,8 @@ describe("runProjectsPhase", () => {
     let projectInsertCalls = 0;
     (ctx.test as any).query = vi.fn((sql: string, params: any[] = []) => {
       if (/from import_map_prod_projects/i.test(sql)) return { rows: [] };
+      // Match-by-code lookup returns empty → falls through to INSERT.
+      if (/from projects where lower\(project_code\)/i.test(sql)) return { rows: [] };
       if (/from import_map_prod_clients/i.test(sql)) return { rows: [{ local_id: "lc" }] };
       if (/from import_map_prod_users/i.test(sql)) return { rows: [{ local_id: "lu" }] };
       if (/insert into projects/i.test(sql)) {
@@ -92,5 +100,32 @@ describe("runProjectsPhase", () => {
     const result = await runProjectsPhase(ctx);
     expect(projectInsertCalls).toBe(2);
     expect(result.inserted).toBe(1);
+  });
+
+  it("matches by project_code, writes map row with matched_existing=true, no projects insert", async () => {
+    const ctx = makeCtx();
+    (ctx.prod.query as any).mockResolvedValue({ rows: [sampleProdProject] });
+
+    const seen: Array<{ sql: string; params: any[] }> = [];
+    (ctx.test as any).query = vi.fn((sql: string, params: any[] = []) => {
+      seen.push({ sql, params });
+      if (/from import_map_prod_projects/i.test(sql)) return { rows: [] };
+      // Match-by-code lookup returns existing test project.
+      if (/from projects where lower\(project_code\)/i.test(sql)) {
+        return { rows: [{ id: "existing-test-uuid" }] };
+      }
+      return { rows: [] };
+    });
+
+    const result = await runProjectsPhase(ctx);
+    expect(result.inserted).toBe(1);
+    expect(result.failed).toBe(0);
+    // No INSERT into projects should have fired.
+    expect(seen.some((s) => /insert into projects\b/i.test(s.sql))).toBe(false);
+    // Map row should carry matched_existing = true and local_id = "existing-test-uuid".
+    const mapInsert = seen.find((s) => /insert into import_map_prod_projects/i.test(s.sql));
+    expect(mapInsert).toBeTruthy();
+    expect(mapInsert!.params[1]).toBe("existing-test-uuid");
+    expect(mapInsert!.params[2]).toBe(true);
   });
 });

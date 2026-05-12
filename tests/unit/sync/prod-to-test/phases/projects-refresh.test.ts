@@ -24,7 +24,8 @@ describe("runProjectsPhaseRefresh", () => {
     (ctx.test as any).query = vi.fn((sql: string, params: any[] = []) => {
       seen.push({ sql, params });
       if (/from import_map_prod_projects/i.test(sql)) {
-        return { rows: [{ prod_id: "prod-p1", local_id: "local-p1" }] };
+        // Includes matched_existing = false — this row should be refreshed.
+        return { rows: [{ prod_id: "prod-p1", local_id: "local-p1", matched_existing: false }] };
       }
       if (/from import_map_prod_clients/i.test(sql)) {
         return { rows: [{ local_id: "local-client-1" }] };
@@ -69,5 +70,27 @@ describe("runProjectsPhaseRefresh", () => {
     expect(updateCall!.params[1]).toBe("Alpha Project Updated"); // name
     expect(updateCall!.params[4]).toBe("local-client-1"); // resolved client_id
     expect(updateCall!.params[5]).toBe("active");         // status
+  });
+
+  it("does not update projects whose map row has matched_existing = true", async () => {
+    const ctx = makeCtx();
+
+    const seen: Array<{ sql: string; params: any[] }> = [];
+    (ctx.test as any).query = vi.fn((sql: string, params: any[] = []) => {
+      seen.push({ sql, params });
+      if (/from import_map_prod_projects/i.test(sql)) {
+        // matched_existing = true rows filtered out by the WHERE clause — return empty.
+        return { rows: [] };
+      }
+      return { rows: [] };
+    });
+
+    (ctx.prod.query as any).mockResolvedValueOnce({ rows: [] });
+
+    const result = await runProjectsPhaseRefresh(ctx);
+    expect(result.scanned).toBe(0);
+    expect(result.inserted).toBe(0);
+    // No UPDATE should have fired.
+    expect(seen.some((s) => /update projects/i.test(s.sql))).toBe(false);
   });
 });

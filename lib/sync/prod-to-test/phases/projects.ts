@@ -73,61 +73,79 @@ export async function runProjectsPhase(ctx: PhaseCtx): Promise<PhaseResult> {
         continue;
       }
 
-      const localClient = row.client_id
-        ? await lookupMap(ctx, "import_map_prod_clients", row.client_id)
-        : null;
-      const localCreatedBy = await resolveUserRef(ctx, row.created_by);
+      // Try match by project_code first.
+      let localId: string | null = null;
+      let matchedExisting = false;
 
-      const localId = randomUUID();
-      let slug = row.slug;
-      let code = row.project_code;
-
-      const doInsert = async () =>
-        ctx.test.query(
-          `insert into projects
-             (id, name, slug, description, archived, created_by, client_id,
-              project_code, client_slug, project_slug, storage_project_dir,
-              status, project_seq, tags, requestor, deadline, last_activity_at, pm_note,
-              created_at)
-           values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
-          [
-            localId,
-            row.name,
-            slug,
-            row.description,
-            row.archived,
-            localCreatedBy,
-            localClient,
-            code,
-            row.client_slug,
-            row.project_slug,
-            row.storage_project_dir,
-            row.status,
-            row.project_seq,
-            row.tags,
-            row.requestor,
-            row.deadline,
-            row.last_activity_at,
-            row.pm_note,
-            row.created_at,
-          ]
+      if (row.project_code) {
+        const byCode = await ctx.test.query<{ id: string }>(
+          "select id from projects where lower(project_code) = lower($1) limit 1",
+          [row.project_code]
         );
+        if (byCode.rows.length > 0) {
+          localId = byCode.rows[0].id;
+          matchedExisting = true;
+        }
+      }
 
-      try {
-        await doInsert();
-      } catch (e: any) {
-        if (e?.code === "23505") {
-          slug = `${row.slug}${suffixFor(localId)}`;
-          code = row.project_code ? `${row.project_code}${suffixFor(localId)}` : null;
+      if (!localId) {
+        // No existing match — INSERT a new project.
+        const localClient = row.client_id
+          ? await lookupMap(ctx, "import_map_prod_clients", row.client_id)
+          : null;
+        const localCreatedBy = await resolveUserRef(ctx, row.created_by);
+
+        localId = randomUUID();
+        let slug = row.slug;
+        let code = row.project_code;
+
+        const doInsert = async () =>
+          ctx.test.query(
+            `insert into projects
+               (id, name, slug, description, archived, created_by, client_id,
+                project_code, client_slug, project_slug, storage_project_dir,
+                status, project_seq, tags, requestor, deadline, last_activity_at, pm_note,
+                created_at)
+             values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
+            [
+              localId,
+              row.name,
+              slug,
+              row.description,
+              row.archived,
+              localCreatedBy,
+              localClient,
+              code,
+              row.client_slug,
+              row.project_slug,
+              row.storage_project_dir,
+              row.status,
+              row.project_seq,
+              row.tags,
+              row.requestor,
+              row.deadline,
+              row.last_activity_at,
+              row.pm_note,
+              row.created_at,
+            ]
+          );
+
+        try {
           await doInsert();
-        } else {
-          throw e;
+        } catch (e: any) {
+          if (e?.code === "23505") {
+            slug = `${row.slug}${suffixFor(localId)}`;
+            code = row.project_code ? `${row.project_code}${suffixFor(localId)}` : null;
+            await doInsert();
+          } else {
+            throw e;
+          }
         }
       }
 
       await ctx.test.query(
-        "insert into import_map_prod_projects (prod_id, local_id) values ($1, $2)",
-        [row.id, localId]
+        "insert into import_map_prod_projects (prod_id, local_id, matched_existing) values ($1, $2, $3)",
+        [row.id, localId, matchedExisting]
       );
       await ctx.test.query("commit");
       inserted++;
@@ -176,7 +194,7 @@ interface ProdProjectRefreshRow {
 
 export async function runProjectsPhaseRefresh(ctx: PhaseCtx): Promise<PhaseResult> {
   const mapRes = await ctx.test.query<{ prod_id: string; local_id: string }>(
-    "select prod_id, local_id from import_map_prod_projects"
+    "select prod_id, local_id from import_map_prod_projects where matched_existing = false"
   );
   if (mapRes.rows.length === 0) {
     ctx.log("[projects:refresh] no mapped projects");

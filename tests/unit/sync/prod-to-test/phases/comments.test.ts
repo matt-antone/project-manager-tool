@@ -33,6 +33,8 @@ describe("runCommentsPhase", () => {
     (ctx.prod.query as any).mockResolvedValue({ rows: [sampleProdComment] });
     const inserts: Array<[string, any[]]> = [];
     (ctx.test as any).query = vi.fn((sql: string, params: any[] = []) => {
+      // matched-existing lookup: no matched projects.
+      if (/from import_map_prod_projects where matched_existing/i.test(sql)) return { rows: [] };
       if (/from import_map_prod_comments/i.test(sql)) return { rows: [] };
       if (/from import_map_prod_threads/i.test(sql)) return { rows: [{ local_id: "lt" }] };
       if (/from import_map_prod_users/i.test(sql)) return { rows: [{ local_id: "lu" }] };
@@ -45,5 +47,22 @@ describe("runCommentsPhase", () => {
     const result = await runCommentsPhase(ctx);
     expect(result.inserted).toBe(1);
     expect(inserts[0][1]).toContain("lp");
+  });
+
+  it("passes matched prod_project_ids as $2 exclusion array to prod query", async () => {
+    const ctx = makeCtx();
+    (ctx.prod.query as any).mockResolvedValue({ rows: [] });
+
+    (ctx.test as any).query = vi.fn((sql: string) => {
+      if (/from import_map_prod_projects where matched_existing/i.test(sql)) {
+        return { rows: [{ prod_id: "matched-prod-p1" }] };
+      }
+      return { rows: [] };
+    });
+
+    await runCommentsPhase(ctx);
+
+    const prodCall = (ctx.prod.query as any).mock.calls[0];
+    expect(prodCall[1][1]).toEqual(["matched-prod-p1"]);
   });
 });

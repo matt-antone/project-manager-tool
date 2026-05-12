@@ -65,6 +65,8 @@ describe("runFilesPhase", () => {
     (ctx.prod.query as any).mockResolvedValue({ rows: [sampleProdFile] });
     const inserts: Array<{ sql: string; params: any[] }> = [];
     (ctx.test as any).query = vi.fn((sql: string, params: any[] = []) => {
+      // matched-existing lookup: no matched projects.
+      if (/from import_map_prod_projects where matched_existing/i.test(sql)) return { rows: [] };
       if (/from import_map_prod_files/i.test(sql)) return { rows: [] };
       if (/from import_map_prod_projects/i.test(sql)) return { rows: [{ local_id: "lp" }] };
       if (/from import_map_prod_users/i.test(sql)) return { rows: [{ local_id: "lu" }] };
@@ -94,6 +96,7 @@ describe("runFilesPhase", () => {
     const ctx = makeCtx();
     (ctx.prod.query as any).mockResolvedValue({ rows: [sampleProdFile] });
     (ctx.test as any).query = vi.fn((sql: string) => {
+      if (/from import_map_prod_projects where matched_existing/i.test(sql)) return { rows: [] };
       if (/from import_map_prod_files/i.test(sql)) return { rows: [] };
       if (/from import_map_prod_projects/i.test(sql)) return { rows: [{ local_id: "lp" }] };
       if (/from import_map_prod_users/i.test(sql)) return { rows: [{ local_id: "lu" }] };
@@ -114,6 +117,7 @@ describe("runFilesPhase", () => {
       rows: [{ ...sampleProdFile, dropbox_path: "/Other/strange/path.png" }],
     });
     (ctx.test as any).query = vi.fn((sql: string) => {
+      if (/from import_map_prod_projects where matched_existing/i.test(sql)) return { rows: [] };
       if (/from import_map_prod_files/i.test(sql)) return { rows: [] };
       if (/from import_map_prod_projects/i.test(sql)) return { rows: [{ local_id: "lp" }] };
       if (/from import_map_prod_users/i.test(sql)) return { rows: [{ local_id: "lu" }] };
@@ -126,5 +130,22 @@ describe("runFilesPhase", () => {
     expect(result.inserted).toBe(0);
     expect(result.failed).toBe(1);
     expect(result.errors[0].reason).toMatch(/does not start with prod root/);
+  });
+
+  it("passes matched prod_project_ids as $2 exclusion array to prod query", async () => {
+    const ctx = makeCtx();
+    (ctx.prod.query as any).mockResolvedValue({ rows: [] });
+
+    (ctx.test as any).query = vi.fn((sql: string) => {
+      if (/from import_map_prod_projects where matched_existing/i.test(sql)) {
+        return { rows: [{ prod_id: "matched-prod-p1" }] };
+      }
+      return { rows: [] };
+    });
+
+    await runFilesPhase(ctx, makeDeps({ ok: true, newId: "n", newPath: "n" }));
+
+    const prodCall = (ctx.prod.query as any).mock.calls[0];
+    expect(prodCall[1][1]).toEqual(["matched-prod-p1"]);
   });
 });

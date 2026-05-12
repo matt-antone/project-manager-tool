@@ -25,13 +25,20 @@ export async function runCommentsPhase(ctx: PhaseCtx): Promise<PhaseResult> {
   const watermark = ctx.watermarks.get("comments") ?? new Date(0);
   const limit = ctx.flags.limitPerPhase;
 
+  // Fetch prod_ids of matched-existing projects so we can exclude their children.
+  const matchedRes = await ctx.test.query<{ prod_id: string }>(
+    "select prod_id from import_map_prod_projects where matched_existing = true"
+  );
+  const matchedProdProjectIds = matchedRes.rows.map((r) => r.prod_id);
+
+  const limitClause = limit ? ` limit ${Math.max(1, Math.floor(limit))}` : "";
   const sql =
     `select id, project_id, thread_id, body_markdown, body_html, author_user_id, edited_at, created_at
        from discussion_comments
        where created_at > $1
-       order by created_at asc, id asc` +
-    (limit ? ` limit ${Math.max(1, Math.floor(limit))}` : "");
-  const prodRes = await ctx.prod.query<ProdCommentRow>(sql, [watermark]);
+         and project_id <> all($2::uuid[])
+       order by created_at asc, id asc` + limitClause;
+  const prodRes = await ctx.prod.query<ProdCommentRow>(sql, [watermark, matchedProdProjectIds]);
 
   let inserted = 0;
   let skipped = 0;

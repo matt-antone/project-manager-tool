@@ -34,6 +34,8 @@ describe("runThreadsPhase", () => {
     const seen: string[] = [];
     (ctx.test as any).query = vi.fn((sql: string) => {
       seen.push(sql);
+      // matched-existing lookup: no matched projects.
+      if (/from import_map_prod_projects where matched_existing/i.test(sql)) return { rows: [] };
       if (/from import_map_prod_threads/i.test(sql)) return { rows: [] };
       if (/from import_map_prod_projects/i.test(sql)) return { rows: [{ local_id: "lp" }] };
       if (/from import_map_prod_users/i.test(sql)) return { rows: [{ local_id: "lu" }] };
@@ -48,6 +50,7 @@ describe("runThreadsPhase", () => {
     const ctx = makeCtx();
     (ctx.prod.query as any).mockResolvedValue({ rows: [sampleProdThread] });
     (ctx.test as any).query = vi.fn((sql: string) => {
+      if (/from import_map_prod_projects where matched_existing/i.test(sql)) return { rows: [] };
       if (/from import_map_prod_threads/i.test(sql)) return { rows: [] };
       if (/from import_map_prod_projects/i.test(sql)) return { rows: [] };
       if (/from import_map_prod_users/i.test(sql)) return { rows: [{ local_id: "lu" }] };
@@ -57,5 +60,24 @@ describe("runThreadsPhase", () => {
     expect(result.inserted).toBe(0);
     expect(result.failed).toBe(1);
     expect(result.errors[0].reason).toMatch(/unresolved project/);
+  });
+
+  it("passes matched prod_project_ids as $2 exclusion array to prod query", async () => {
+    const ctx = makeCtx();
+    // prod query returns empty rows (no threads to process)
+    (ctx.prod.query as any).mockResolvedValue({ rows: [] });
+
+    (ctx.test as any).query = vi.fn((sql: string) => {
+      if (/from import_map_prod_projects where matched_existing/i.test(sql)) {
+        return { rows: [{ prod_id: "matched-prod-p1" }] };
+      }
+      return { rows: [] };
+    });
+
+    await runThreadsPhase(ctx);
+
+    // The prod query call should have received the matched prod_id array as $2.
+    const prodCall = (ctx.prod.query as any).mock.calls[0];
+    expect(prodCall[1][1]).toEqual(["matched-prod-p1"]);
   });
 });
