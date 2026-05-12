@@ -41,4 +41,34 @@ describe("assertEnvSafe", () => {
       })
     ).not.toThrow();
   });
+
+  it("throws if prodUrl is empty", () => {
+    expect(() =>
+      assertEnvSafe({
+        prodUrl: "",
+        testUrl: "postgres://x@test.example.com/db",
+        prodHostHint: undefined,
+      })
+    ).toThrow(/must both be set/i);
+  });
+
+  it("throws if testUrl is empty", () => {
+    expect(() =>
+      assertEnvSafe({
+        prodUrl: "postgres://x@prod.example.com/db",
+        testUrl: "",
+        prodHostHint: undefined,
+      })
+    ).toThrow(/must both be set/i);
+  });
+
+  it("ignores prodHostHint when it is whitespace-only", () => {
+    expect(() =>
+      assertEnvSafe({
+        prodUrl: "postgres://x@prod.example.com/db",
+        testUrl: "postgres://x@prod-test.example.com/db",
+        prodHostHint: "   ",
+      })
+    ).not.toThrow();
+  });
 });
