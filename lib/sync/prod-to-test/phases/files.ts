@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { Dropbox } from "dropbox";
 import type { PhaseCtx, PhaseResult, PhaseError } from "./types";
 import { resolveUserRef } from "./user-ref";
 
@@ -25,17 +26,45 @@ async function lookupMap(ctx: PhaseCtx, table: string, prodId: string): Promise<
   return r.rows[0]?.local_id ?? null;
 }
 
-function bucketName(): string {
-  return process.env.SUPABASE_STORAGE_BUCKET ?? "project-files";
+function buildDropboxClient(): Dropbox {
+  // Shared credentials between prod and test — single client suffices.
+  return new Dropbox({
+    clientId: process.env.DROPBOX_APP_KEY,
+    clientSecret: process.env.DROPBOX_APP_SECRET,
+    refreshToken: process.env.DROPBOX_REFRESH_TOKEN,
+    selectUser: process.env.DROPBOX_SELECT_USER,
+    fetch: globalThis.fetch.bind(globalThis),
+  });
 }
 
-async function blobToBuffer(b: Blob): Promise<Buffer> {
-  return Buffer.from(await b.arrayBuffer());
+function rewritePath(prodPath: string, prodRoot: string, testRoot: string): string | null {
+  if (!prodPath.startsWith(prodRoot)) return null;
+  return testRoot + prodPath.slice(prodRoot.length);
 }
 
-export async function runFilesPhase(ctx: PhaseCtx): Promise<PhaseResult> {
+export interface FilesPhaseDeps {
+  dropbox?: {
+    filesCopyV2: (arg: {
+      from_path: string;
+      to_path: string;
+      autorename: boolean;
+    }) => Promise<{ result: { metadata: { id: string; path_display?: string } } }>;
+  };
+}
+
+export async function runFilesPhase(ctx: PhaseCtx, deps: FilesPhaseDeps = {}): Promise<PhaseResult> {
   const watermark = ctx.watermarks.get("files") ?? new Date(0);
   const limit = ctx.flags.limitPerPhase;
+
+  const prodRoot = process.env.PROD_DROPBOX_PROJECTS_ROOT_FOLDER;
+  const testRoot = process.env.DROPBOX_PROJECTS_ROOT_FOLDER;
+  if (!prodRoot || !testRoot) {
+    throw new Error(
+      "PROD_DROPBOX_PROJECTS_ROOT_FOLDER and DROPBOX_PROJECTS_ROOT_FOLDER must both be set"
+    );
+  }
+
+  const dropbox = deps.dropbox ?? buildDropboxClient();
 
   const sql =
     `select id, project_id, thread_id, comment_id, uploader_user_id, filename, mime_type,
@@ -51,8 +80,6 @@ export async function runFilesPhase(ctx: PhaseCtx): Promise<PhaseResult> {
   let failed = 0;
   const errors: PhaseError[] = [];
   let maxSeen = watermark;
-
-  const bucket = bucketName();
 
   for (const row of prodRes.rows) {
     try {
@@ -75,20 +102,21 @@ export async function runFilesPhase(ctx: PhaseCtx): Promise<PhaseResult> {
         ? await lookupMap(ctx, "import_map_prod_comments", row.comment_id)
         : null;
 
-      const storageKey = row.dropbox_path; // same key in both buckets
-      const dl = await (ctx.prodStorage as any).storage
-        .from(bucket)
-        .download(storageKey);
-      if (dl.error || !dl.data) throw new Error(`download failed: ${dl.error?.message ?? "no data"}`);
-      const bytes = await blobToBuffer(dl.data as Blob);
+      const testPath = rewritePath(row.dropbox_path, prodRoot, testRoot);
+      if (!testPath) {
+        throw new Error(
+          `dropbox_path "${row.dropbox_path}" does not start with prod root "${prodRoot}"`
+        );
+      }
 
-      const up = await (ctx.testStorage as any).storage
-        .from(bucket)
-        .upload(storageKey, bytes, {
-          contentType: row.mime_type,
-          upsert: true,
-        });
-      if (up.error) throw new Error(`upload failed: ${up.error.message}`);
+      const copyRes = await dropbox.filesCopyV2({
+        from_path: row.dropbox_path,
+        to_path: testPath,
+        autorename: true,
+      });
+      const meta = copyRes.result.metadata as { id: string; path_display?: string };
+      const newFileId = meta.id;
+      const newPath = meta.path_display ?? testPath;
 
       const localId = randomUUID();
       await ctx.test.query(
@@ -105,8 +133,8 @@ export async function runFilesPhase(ctx: PhaseCtx): Promise<PhaseResult> {
           row.filename,
           row.mime_type,
           row.size_bytes,
-          row.dropbox_file_id,
-          row.dropbox_path,
+          newFileId,
+          newPath,
           row.checksum,
           row.created_at,
         ]
