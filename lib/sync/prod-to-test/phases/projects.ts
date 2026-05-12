@@ -15,6 +15,13 @@ interface ProdProjectRow {
   client_slug: string | null;
   project_slug: string | null;
   storage_project_dir: string | null;
+  status: string;
+  project_seq: number | null;
+  tags: string[];
+  requestor: string | null;
+  deadline: string | null;
+  last_activity_at: Date | null;
+  pm_note: string | null;
   created_at: Date;
 }
 
@@ -40,7 +47,9 @@ export async function runProjectsPhase(ctx: PhaseCtx): Promise<PhaseResult> {
 
   const sql =
     `select id, name, slug, description, archived, created_by, client_id,
-            project_code, client_slug, project_slug, storage_project_dir, created_at
+            project_code, client_slug, project_slug, storage_project_dir,
+            status, project_seq, tags, requestor, deadline, last_activity_at, pm_note,
+            created_at
        from projects
        where created_at > $1
        order by created_at asc, id asc` +
@@ -77,8 +86,10 @@ export async function runProjectsPhase(ctx: PhaseCtx): Promise<PhaseResult> {
         ctx.test.query(
           `insert into projects
              (id, name, slug, description, archived, created_by, client_id,
-              project_code, client_slug, project_slug, storage_project_dir, created_at)
-           values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+              project_code, client_slug, project_slug, storage_project_dir,
+              status, project_seq, tags, requestor, deadline, last_activity_at, pm_note,
+              created_at)
+           values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
           [
             localId,
             row.name,
@@ -91,6 +102,13 @@ export async function runProjectsPhase(ctx: PhaseCtx): Promise<PhaseResult> {
             row.client_slug,
             row.project_slug,
             row.storage_project_dir,
+            row.status,
+            row.project_seq,
+            row.tags,
+            row.requestor,
+            row.deadline,
+            row.last_activity_at,
+            row.pm_note,
             row.created_at,
           ]
         );

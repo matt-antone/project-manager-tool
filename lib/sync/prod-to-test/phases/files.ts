@@ -15,6 +15,8 @@ interface ProdFileRow {
   dropbox_file_id: string;
   dropbox_path: string;
   checksum: string;
+  thumbnail_url: string | null;
+  bc_attachment_id: string | null;
   created_at: Date;
 }
 
@@ -53,7 +55,8 @@ export async function runFilesPhase(ctx: PhaseCtx, deps: FilesPhaseDeps = {}): P
 
   const sql =
     `select id, project_id, thread_id, comment_id, uploader_user_id, filename, mime_type,
-            size_bytes, dropbox_file_id, dropbox_path, checksum, created_at
+            size_bytes, dropbox_file_id, dropbox_path, checksum, thumbnail_url, bc_attachment_id,
+            created_at
        from project_files
        where created_at > $1
        order by created_at asc, id asc` +
@@ -106,8 +109,9 @@ export async function runFilesPhase(ctx: PhaseCtx, deps: FilesPhaseDeps = {}): P
       await ctx.test.query(
         `insert into project_files
            (id, project_id, thread_id, comment_id, uploader_user_id, filename, mime_type,
-            size_bytes, dropbox_file_id, dropbox_path, checksum, created_at)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+            size_bytes, dropbox_file_id, dropbox_path, checksum, thumbnail_url, bc_attachment_id,
+            created_at)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
         [
           localId,
           localProject,
@@ -120,6 +124,8 @@ export async function runFilesPhase(ctx: PhaseCtx, deps: FilesPhaseDeps = {}): P
           newFileId,
           newPath,
           row.checksum,
+          row.thumbnail_url,
+          row.bc_attachment_id,
           row.created_at,
         ]
       );

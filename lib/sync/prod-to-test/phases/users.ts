@@ -10,7 +10,10 @@ interface ProdUserRow {
   job_title: string | null;
   timezone: string | null;
   bio: string | null;
+  is_legacy: boolean;
+  active: boolean | null;
   created_at: Date;
+  last_seen_at: Date;
 }
 
 export async function runUsersPhase(ctx: PhaseCtx): Promise<PhaseResult> {
@@ -18,7 +21,8 @@ export async function runUsersPhase(ctx: PhaseCtx): Promise<PhaseResult> {
   const limit = ctx.flags.limitPerPhase;
 
   const sql =
-    `select id, email, first_name, last_name, avatar_url, job_title, timezone, bio, created_at
+    `select id, email, first_name, last_name, avatar_url, job_title, timezone, bio,
+            is_legacy, active, created_at, last_seen_at
        from user_profiles
        where created_at > $1
        order by created_at asc, id asc` +
@@ -56,8 +60,9 @@ export async function runUsersPhase(ctx: PhaseCtx): Promise<PhaseResult> {
         localId = row.id;
         await ctx.test.query(
           `insert into user_profiles
-             (id, email, first_name, last_name, avatar_url, job_title, timezone, bio)
-           values ($1, $2, $3, $4, $5, $6, $7, $8)
+             (id, email, first_name, last_name, avatar_url, job_title, timezone, bio,
+              is_legacy, active, created_at, last_seen_at)
+           values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
            on conflict (id) do nothing`,
           [
             row.id,
@@ -68,6 +73,10 @@ export async function runUsersPhase(ctx: PhaseCtx): Promise<PhaseResult> {
             row.job_title,
             row.timezone,
             row.bio,
+            row.is_legacy,
+            row.active,
+            row.created_at,
+            row.last_seen_at,
           ]
         );
       }

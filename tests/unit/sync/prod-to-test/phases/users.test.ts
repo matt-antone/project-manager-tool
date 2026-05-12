@@ -30,7 +30,10 @@ describe("runUsersPhase", () => {
         job_title: null,
         timezone: null,
         bio: null,
+        is_legacy: false,
+        active: true,
         created_at: new Date("2026-04-01T00:00:00Z"),
+        last_seen_at: new Date("2026-04-01T00:00:00Z"),
       }],
     });
     const inserts: string[] = [];
@@ -59,7 +62,10 @@ describe("runUsersPhase", () => {
         job_title: null,
         timezone: null,
         bio: null,
+        is_legacy: false,
+        active: true,
         created_at: new Date("2026-04-02T00:00:00Z"),
+        last_seen_at: new Date("2026-04-02T00:00:00Z"),
       }],
     });
     const inserts: Array<[string, any[]]> = [];

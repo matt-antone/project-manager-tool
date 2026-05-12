@@ -6,6 +6,12 @@ interface ProdClientRow {
   id: string;
   code: string;
   name: string;
+  archived_at: Date | null;
+  dropbox_archive_status: string;
+  archive_started_at: Date | null;
+  archive_error: string | null;
+  github_repos: string[];
+  domains: string[];
   created_at: Date;
 }
 
@@ -14,7 +20,8 @@ export async function runClientsPhase(ctx: PhaseCtx): Promise<PhaseResult> {
   const limit = ctx.flags.limitPerPhase;
 
   const sql =
-    `select id, code, name, created_at
+    `select id, code, name, archived_at, dropbox_archive_status, archive_started_at,
+            archive_error, github_repos, domains, created_at
        from clients
        where created_at > $1
        order by created_at asc, id asc` +
@@ -51,8 +58,22 @@ export async function runClientsPhase(ctx: PhaseCtx): Promise<PhaseResult> {
       } else {
         localId = randomUUID();
         await ctx.test.query(
-          "insert into clients (id, code, name) values ($1, $2, $3)",
-          [localId, row.code, row.name]
+          `insert into clients
+             (id, code, name, archived_at, dropbox_archive_status, archive_started_at,
+              archive_error, github_repos, domains, created_at)
+           values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+          [
+            localId,
+            row.code,
+            row.name,
+            row.archived_at,
+            row.dropbox_archive_status,
+            row.archive_started_at,
+            row.archive_error,
+            row.github_repos,
+            row.domains,
+            row.created_at,
+          ]
         );
       }
       await ctx.test.query(

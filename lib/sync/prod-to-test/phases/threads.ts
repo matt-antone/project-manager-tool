@@ -9,6 +9,7 @@ interface ProdThreadRow {
   body_markdown: string;
   body_html: string;
   author_user_id: string;
+  edited_at: Date | null;
   created_at: Date;
 }
 
@@ -25,7 +26,7 @@ export async function runThreadsPhase(ctx: PhaseCtx): Promise<PhaseResult> {
   const limit = ctx.flags.limitPerPhase;
 
   const sql =
-    `select id, project_id, title, body_markdown, body_html, author_user_id, created_at
+    `select id, project_id, title, body_markdown, body_html, author_user_id, edited_at, created_at
        from discussion_threads
        where created_at > $1
        order by created_at asc, id asc` +
@@ -55,9 +56,9 @@ export async function runThreadsPhase(ctx: PhaseCtx): Promise<PhaseResult> {
       const localId = randomUUID();
       await ctx.test.query(
         `insert into discussion_threads
-           (id, project_id, title, body_markdown, body_html, author_user_id, created_at)
-         values ($1,$2,$3,$4,$5,$6,$7)`,
-        [localId, localProject, row.title, row.body_markdown, row.body_html, localAuthor, row.created_at]
+           (id, project_id, title, body_markdown, body_html, author_user_id, edited_at, created_at)
+         values ($1,$2,$3,$4,$5,$6,$7,$8)`,
+        [localId, localProject, row.title, row.body_markdown, row.body_html, localAuthor, row.edited_at, row.created_at]
       );
       await ctx.test.query(
         "insert into import_map_prod_threads (prod_id, local_id) values ($1, $2)",

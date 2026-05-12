@@ -28,6 +28,8 @@ const sampleProdFile = {
   dropbox_file_id: "id:old-prod-id",
   dropbox_path: "/Projects/Acme/Project-1/foo.png",
   checksum: "abc",
+  thumbnail_url: null,
+  bc_attachment_id: null,
   created_at: new Date("2026-04-30T00:00:00Z"),
 };
 

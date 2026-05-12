@@ -30,7 +30,7 @@ describe("runClientsPhase", () => {
     (ctx.prod.query as any)
       .mockResolvedValueOnce({
         rows: [
-          { id: "11111111-1111-1111-1111-111111111111", code: "ACME", name: "Acme Inc", created_at: new Date("2026-04-01T00:00:00Z") },
+          { id: "11111111-1111-1111-1111-111111111111", code: "ACME", name: "Acme Inc", archived_at: null, dropbox_archive_status: "idle", archive_started_at: null, archive_error: null, github_repos: [], domains: [], created_at: new Date("2026-04-01T00:00:00Z") },
         ],
       });
     const testQuery = (ctx.test as any).query as ReturnType<typeof vi.fn>;
@@ -55,7 +55,7 @@ describe("runClientsPhase", () => {
     const ctx = makeCtx();
     (ctx.prod.query as any).mockResolvedValueOnce({
       rows: [
-        { id: "22222222-2222-2222-2222-222222222222", code: "BETA", name: "Beta", created_at: new Date("2026-04-02T00:00:00Z") },
+        { id: "22222222-2222-2222-2222-222222222222", code: "BETA", name: "Beta", archived_at: null, dropbox_archive_status: "idle", archive_started_at: null, archive_error: null, github_repos: [], domains: [], created_at: new Date("2026-04-02T00:00:00Z") },
       ],
     });
     const inserts: string[] = [];
@@ -76,7 +76,7 @@ describe("runClientsPhase", () => {
     const ctx = makeCtx();
     (ctx.prod.query as any).mockResolvedValueOnce({
       rows: [
-        { id: "33333333-3333-3333-3333-333333333333", code: "GAMMA", name: "Gamma", created_at: new Date("2026-04-03T00:00:00Z") },
+        { id: "33333333-3333-3333-3333-333333333333", code: "GAMMA", name: "Gamma", archived_at: null, dropbox_archive_status: "idle", archive_started_at: null, archive_error: null, github_repos: [], domains: [], created_at: new Date("2026-04-03T00:00:00Z") },
       ],
     });
     (ctx.test as any).query = vi.fn((sql: string) => {

@@ -23,6 +23,7 @@ const sampleProdThread = {
   body_markdown: "# hi",
   body_html: "<h1>hi</h1>",
   author_user_id: "prod-user-1",
+  edited_at: null,
   created_at: new Date("2026-04-20T00:00:00Z"),
 };
 

@@ -31,6 +31,13 @@ const sampleProdProject = {
   client_slug: "acme",
   project_slug: "new-project",
   storage_project_dir: "acme/new-project",
+  status: "in_progress",
+  project_seq: 42,
+  tags: ["tag-a"],
+  requestor: null,
+  deadline: null,
+  last_activity_at: new Date("2026-04-15T00:00:00Z"),
+  pm_note: null,
   created_at: new Date("2026-04-15T00:00:00Z"),
 };
 
