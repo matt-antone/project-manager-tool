@@ -8,6 +8,7 @@ export interface CliFlags {
   limitPerPhase: number | null;
   noBackup: boolean;
   iKnowWhatImDoing: boolean;
+  refreshMetadata: boolean;
 }
 
 export interface PhaseCtx {
@@ -27,6 +28,7 @@ export interface PhaseError {
 
 export interface PhaseResult {
   entity: EntityName;
+  kind?: "insert" | "refresh";
   scanned: number;
   inserted: number;
   skipped: number;

@@ -149,11 +149,82 @@ export async function runFilesPhase(ctx: PhaseCtx, deps: FilesPhaseDeps = {}): P
 
   return {
     entity: "files",
+    kind: "insert",
     scanned: prodRes.rows.length,
     inserted,
     skipped,
     failed,
     newWatermark: maxSeen,
+    errors,
+  };
+}
+
+interface ProdFileRefreshRow {
+  id: string;
+  filename: string;
+  mime_type: string;
+  thumbnail_url: string | null;
+  bc_attachment_id: string | null;
+}
+
+export async function runFilesPhaseRefresh(ctx: PhaseCtx): Promise<PhaseResult> {
+  const mapRes = await ctx.test.query<{ prod_id: string; local_id: string }>(
+    "select prod_id, local_id from import_map_prod_files"
+  );
+  if (mapRes.rows.length === 0) {
+    ctx.log("[files:refresh] no mapped files");
+    return { entity: "files", kind: "refresh", scanned: 0, inserted: 0, skipped: 0, failed: 0, newWatermark: new Date(0), errors: [] };
+  }
+  const prodIds = mapRes.rows.map((r) => r.prod_id);
+  const localByProd = new Map(mapRes.rows.map((r) => [r.prod_id, r.local_id]));
+
+  const limit = ctx.flags.limitPerPhase;
+  const limitClause = limit ? ` limit ${Math.max(1, Math.floor(limit))}` : "";
+
+  const prodRes = await ctx.prod.query<ProdFileRefreshRow>(
+    `select id, filename, mime_type, thumbnail_url, bc_attachment_id
+       from project_files
+       where id = ANY($1)
+       order by id asc` + limitClause,
+    [prodIds]
+  );
+
+  let updated = 0;
+  let failed = 0;
+  const errors: PhaseError[] = [];
+
+  for (const row of prodRes.rows) {
+    const localId = localByProd.get(row.id);
+    if (!localId) continue;
+    try {
+      await ctx.test.query(
+        `update project_files set
+            filename = $2,
+            mime_type = $3,
+            thumbnail_url = $4,
+            bc_attachment_id = $5
+          where id = $1`,
+        [localId, row.filename, row.mime_type, row.thumbnail_url, row.bc_attachment_id]
+      );
+      updated++;
+    } catch (e) {
+      failed++;
+      errors.push({ prodId: row.id, reason: (e as Error).message });
+    }
+  }
+
+  ctx.log(
+    `[files:refresh] scanned=${prodRes.rows.length} updated=${updated} failed=${failed}`
+  );
+
+  return {
+    entity: "files",
+    kind: "refresh",
+    scanned: prodRes.rows.length,
+    inserted: updated,
+    skipped: 0,
+    failed,
+    newWatermark: new Date(0),
     errors,
   };
 }

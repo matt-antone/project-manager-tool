@@ -145,11 +145,126 @@ export async function runProjectsPhase(ctx: PhaseCtx): Promise<PhaseResult> {
 
   return {
     entity: "projects",
+    kind: "insert",
     scanned: prodRes.rows.length,
     inserted,
     skipped,
     failed,
     newWatermark: maxSeen,
+    errors,
+  };
+}
+
+interface ProdProjectRefreshRow {
+  id: string;
+  name: string;
+  description: string | null;
+  archived: boolean;
+  client_id: string | null;
+  status: string;
+  project_seq: number | null;
+  tags: string[];
+  requestor: string | null;
+  deadline: string | null;
+  last_activity_at: Date | null;
+  pm_note: string | null;
+  project_code: string | null;
+  client_slug: string | null;
+  project_slug: string | null;
+  storage_project_dir: string | null;
+}
+
+export async function runProjectsPhaseRefresh(ctx: PhaseCtx): Promise<PhaseResult> {
+  const mapRes = await ctx.test.query<{ prod_id: string; local_id: string }>(
+    "select prod_id, local_id from import_map_prod_projects"
+  );
+  if (mapRes.rows.length === 0) {
+    ctx.log("[projects:refresh] no mapped projects");
+    return { entity: "projects", kind: "refresh", scanned: 0, inserted: 0, skipped: 0, failed: 0, newWatermark: new Date(0), errors: [] };
+  }
+  const prodIds = mapRes.rows.map((r) => r.prod_id);
+  const localByProd = new Map(mapRes.rows.map((r) => [r.prod_id, r.local_id]));
+
+  const limit = ctx.flags.limitPerPhase;
+  const limitClause = limit ? ` limit ${Math.max(1, Math.floor(limit))}` : "";
+
+  const prodRes = await ctx.prod.query<ProdProjectRefreshRow>(
+    `select id, name, description, archived, client_id, status, project_seq, tags,
+            requestor, deadline, last_activity_at, pm_note, project_code, client_slug,
+            project_slug, storage_project_dir
+       from projects
+       where id = ANY($1)
+       order by id asc` + limitClause,
+    [prodIds]
+  );
+
+  let updated = 0;
+  let failed = 0;
+  const errors: PhaseError[] = [];
+
+  for (const row of prodRes.rows) {
+    const localId = localByProd.get(row.id);
+    if (!localId) continue;
+    try {
+      const localClient = row.client_id
+        ? await lookupMap(ctx, "import_map_prod_clients", row.client_id)
+        : null;
+      await ctx.test.query(
+        `update projects set
+            name = $2,
+            description = $3,
+            archived = $4,
+            client_id = $5,
+            status = $6,
+            project_seq = $7,
+            tags = $8,
+            requestor = $9,
+            deadline = $10,
+            last_activity_at = $11,
+            pm_note = $12,
+            project_code = $13,
+            client_slug = $14,
+            project_slug = $15,
+            storage_project_dir = $16
+          where id = $1`,
+        [
+          localId,
+          row.name,
+          row.description,
+          row.archived,
+          localClient,
+          row.status,
+          row.project_seq,
+          row.tags,
+          row.requestor,
+          row.deadline,
+          row.last_activity_at,
+          row.pm_note,
+          row.project_code,
+          row.client_slug,
+          row.project_slug,
+          row.storage_project_dir,
+        ]
+      );
+      updated++;
+    } catch (e) {
+      failed++;
+      errors.push({ prodId: row.id, reason: (e as Error).message });
+    }
+  }
+
+  ctx.log(
+    `[projects:refresh] scanned=${prodRes.rows.length} updated=${updated} failed=${failed}`
+  );
+
+  return {
+    entity: "projects",
+    kind: "refresh",
+    scanned: prodRes.rows.length,
+    inserted: updated,
+    skipped: 0,
+    failed,
+    newWatermark: new Date(0),
     errors,
   };
 }

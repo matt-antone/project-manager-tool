@@ -10,12 +10,12 @@ import { assertEnvSafe } from "@/lib/sync/prod-to-test/safety";
 import { runBackup } from "@/lib/sync/prod-to-test/backup";
 import { buildContext } from "@/lib/sync/prod-to-test/context";
 import { saveWatermark, ENTITY_NAMES, type EntityName } from "@/lib/sync/prod-to-test/watermarks";
-import { runClientsPhase } from "@/lib/sync/prod-to-test/phases/clients";
-import { runUsersPhase } from "@/lib/sync/prod-to-test/phases/users";
-import { runProjectsPhase } from "@/lib/sync/prod-to-test/phases/projects";
-import { runThreadsPhase } from "@/lib/sync/prod-to-test/phases/threads";
+import { runClientsPhase, runClientsPhaseRefresh } from "@/lib/sync/prod-to-test/phases/clients";
+import { runUsersPhase, runUsersPhaseRefresh } from "@/lib/sync/prod-to-test/phases/users";
+import { runProjectsPhase, runProjectsPhaseRefresh } from "@/lib/sync/prod-to-test/phases/projects";
+import { runThreadsPhase, runThreadsPhaseRefresh } from "@/lib/sync/prod-to-test/phases/threads";
 import { runCommentsPhase } from "@/lib/sync/prod-to-test/phases/comments";
-import { runFilesPhase } from "@/lib/sync/prod-to-test/phases/files";
+import { runFilesPhase, runFilesPhaseRefresh } from "@/lib/sync/prod-to-test/phases/files";
 import type { CliFlags, PhaseResult, RunPhase } from "@/lib/sync/prod-to-test/phases/types";
 
 function requireEnv(name: string): string {
@@ -33,6 +33,7 @@ function parseFlags(argv: string[]): CliFlags {
     limitPerPhase: null,
     noBackup: false,
     iKnowWhatImDoing: false,
+    refreshMetadata: false,
   };
   for (const a of argv) {
     if (a.startsWith("--phase=")) {
@@ -53,6 +54,8 @@ function parseFlags(argv: string[]): CliFlags {
       out.noBackup = true;
     } else if (a === "--i-know-what-im-doing") {
       out.iKnowWhatImDoing = true;
+    } else if (a === "--refresh-metadata") {
+      out.refreshMetadata = true;
     } else if (a === "--help" || a === "-h") {
       printHelp();
       process.exit(0);
@@ -73,6 +76,7 @@ function printHelp(): void {
     `Usage: pnpm sync:prod-to-test [flags]\n` +
       `  --phase=<name>          run only one phase (${ENTITY_NAMES.join("|")})\n` +
       `  --limit-per-phase=<n>   cap rows scanned per phase\n` +
+      `  --refresh-metadata      also update mutable fields on already-mapped records\n` +
       `  --no-backup             skip pg_dump (requires --i-know-what-im-doing)\n` +
       `  --i-know-what-im-doing  acknowledge no-backup risk\n`
   );
@@ -85,6 +89,15 @@ const PHASES: Record<EntityName, RunPhase> = {
   threads: runThreadsPhase,
   comments: runCommentsPhase,
   files: runFilesPhase,
+};
+
+// Comments intentionally excluded — body fields not edited often; edited_at captured at insert.
+const REFRESH_PHASES: Partial<Record<EntityName, RunPhase>> = {
+  clients: runClientsPhaseRefresh,
+  users: runUsersPhaseRefresh,
+  projects: runProjectsPhaseRefresh,
+  threads: runThreadsPhaseRefresh,
+  files: runFilesPhaseRefresh,
 };
 
 async function main(): Promise<void> {
@@ -128,6 +141,22 @@ async function main(): Promise<void> {
       } else if (result.failed > 0) {
         log(`[${name}] watermark HELD (failed=${result.failed})`);
         exitCode = 1;
+      }
+    }
+
+    if (flags.refreshMetadata) {
+      for (const name of order) {
+        const refreshFn = REFRESH_PHASES[name];
+        if (!refreshFn) {
+          log(`[${name}:refresh] skipped (no refresh defined for this phase)`);
+          continue;
+        }
+        const result = await refreshFn(ctx);
+        results.push(result);
+        if (result.failed > 0) {
+          log(`[${name}:refresh] ${result.failed} row(s) failed`);
+          exitCode = 1;
+        }
       }
     }
   } finally {
