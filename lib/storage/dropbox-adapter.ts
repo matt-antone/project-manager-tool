@@ -65,6 +65,20 @@ export class DropboxStorageAdapter {
     return this.clientPromise;
   }
 
+  async copyFile(args: { fromPath: string; toPath: string; autorename: boolean }): Promise<{ id: string; pathDisplay: string }> {
+    const client = await this.getClient();
+    const res = await client.filesCopyV2({
+      from_path: args.fromPath,
+      to_path: args.toPath,
+      autorename: args.autorename,
+    });
+    const meta = res.result.metadata as { id: string; path_display?: string };
+    return {
+      id: meta.id,
+      pathDisplay: meta.path_display ?? args.toPath,
+    };
+  }
+
   async uploadComplete(args: {
     sessionId: string;
     targetPath: string;

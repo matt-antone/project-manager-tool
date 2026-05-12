@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { Dropbox } from "dropbox";
 import type { PhaseCtx, PhaseResult, PhaseError } from "./types";
 import { resolveUserRef } from "./user-ref";
+import { DropboxStorageAdapter } from "@/lib/storage/dropbox-adapter";
 
 interface ProdFileRow {
   id: string;
@@ -26,17 +26,6 @@ async function lookupMap(ctx: PhaseCtx, table: string, prodId: string): Promise<
   return r.rows[0]?.local_id ?? null;
 }
 
-function buildDropboxClient(): Dropbox {
-  // Shared credentials between prod and test — single client suffices.
-  return new Dropbox({
-    clientId: process.env.DROPBOX_APP_KEY,
-    clientSecret: process.env.DROPBOX_APP_SECRET,
-    refreshToken: process.env.DROPBOX_REFRESH_TOKEN,
-    selectUser: process.env.DROPBOX_SELECT_USER,
-    fetch: globalThis.fetch.bind(globalThis),
-  });
-}
-
 function rewritePath(prodPath: string, prodRoot: string, testRoot: string): string | null {
   if (!prodPath.startsWith(prodRoot)) return null;
   return testRoot + prodPath.slice(prodRoot.length);
@@ -44,11 +33,7 @@ function rewritePath(prodPath: string, prodRoot: string, testRoot: string): stri
 
 export interface FilesPhaseDeps {
   dropbox?: {
-    filesCopyV2: (arg: {
-      from_path: string;
-      to_path: string;
-      autorename: boolean;
-    }) => Promise<{ result: { metadata: { id: string; path_display?: string } } }>;
+    copyFile: (args: { fromPath: string; toPath: string; autorename: boolean }) => Promise<{ id: string; pathDisplay: string }>;
   };
 }
 
@@ -64,7 +49,7 @@ export async function runFilesPhase(ctx: PhaseCtx, deps: FilesPhaseDeps = {}): P
     );
   }
 
-  const dropbox = deps.dropbox ?? buildDropboxClient();
+  const dropbox = deps.dropbox ?? new DropboxStorageAdapter();
 
   const sql =
     `select id, project_id, thread_id, comment_id, uploader_user_id, filename, mime_type,
@@ -109,14 +94,13 @@ export async function runFilesPhase(ctx: PhaseCtx, deps: FilesPhaseDeps = {}): P
         );
       }
 
-      const copyRes = await dropbox.filesCopyV2({
-        from_path: row.dropbox_path,
-        to_path: testPath,
+      const copyRes = await dropbox.copyFile({
+        fromPath: row.dropbox_path,
+        toPath: testPath,
         autorename: true,
       });
-      const meta = copyRes.result.metadata as { id: string; path_display?: string };
-      const newFileId = meta.id;
-      const newPath = meta.path_display ?? testPath;
+      const newFileId = copyRes.id;
+      const newPath = copyRes.pathDisplay;
 
       const localId = randomUUID();
       await ctx.test.query(

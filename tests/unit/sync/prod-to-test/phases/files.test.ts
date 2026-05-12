@@ -50,11 +50,9 @@ describe("runFilesPhase", () => {
   ): FilesPhaseDeps {
     return {
       dropbox: {
-        filesCopyV2: vi.fn(async () => {
+        copyFile: vi.fn(async () => {
           if (!copyResult.ok) throw new Error(copyResult.reason);
-          return {
-            result: { metadata: { id: copyResult.newId, path_display: copyResult.newPath } },
-          };
+          return { id: copyResult.newId, pathDisplay: copyResult.newPath };
         }),
       },
     };
@@ -83,9 +81,9 @@ describe("runFilesPhase", () => {
     expect(ins).toBeTruthy();
     expect(ins.params).toContain("id:new-test-id");
     expect(ins.params).toContain("/Projects-test/Acme/Project-1/foo.png");
-    expect((deps.dropbox!.filesCopyV2 as any).mock.calls[0][0]).toEqual({
-      from_path: "/Projects/Acme/Project-1/foo.png",
-      to_path: "/Projects-test/Acme/Project-1/foo.png",
+    expect((deps.dropbox!.copyFile as any).mock.calls[0][0]).toEqual({
+      fromPath: "/Projects/Acme/Project-1/foo.png",
+      toPath: "/Projects-test/Acme/Project-1/foo.png",
       autorename: true,
     });
   });
