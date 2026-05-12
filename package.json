@@ -7,6 +7,7 @@
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
+    "sync:prod-to-test": "npx tsx scripts/sync-prod-to-test.ts",
     "lint": "next lint",
     "test": "vitest run",
     "test:watch": "vitest",
