@@ -1479,6 +1479,23 @@ export async function editThread(args: {
   return result.rows[0];
 }
 
+export async function countNonAuthorComments(args: {
+  projectId: string;
+  threadId: string;
+  authorUserId: string;
+}) {
+  const result = await query<{ c: string }>(
+    `select count(*)::int as c
+       from discussion_comments
+      where project_id = $1
+        and thread_id = $2
+        and author_user_id <> $3`,
+    [args.projectId, args.threadId, args.authorUserId]
+  );
+  const raw = result.rows[0]?.c;
+  return typeof raw === "number" ? raw : Number(raw ?? 0);
+}
+
 export async function getThread(projectId: string, threadId: string) {
   const threadResult = await query(
     `select
