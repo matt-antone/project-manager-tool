@@ -197,27 +197,14 @@ interface ProdProjectRefreshRow {
 }
 
 export async function runProjectsPhaseRefresh(ctx: PhaseCtx): Promise<PhaseResult> {
-  const mapRes = await ctx.test.query<{ prod_id: string; local_id: string }>(
-    "select prod_id, local_id from import_map_prod_projects where matched_existing = false"
-  );
-  if (mapRes.rows.length === 0) {
-    ctx.log("[projects:refresh] no mapped projects");
-    return { entity: "projects", kind: "refresh", scanned: 0, inserted: 0, skipped: 0, failed: 0, newWatermark: new Date(0), errors: [] };
-  }
-  const prodIds = mapRes.rows.map((r) => r.prod_id);
-  const localByProd = new Map(mapRes.rows.map((r) => [r.prod_id, r.local_id]));
-
-  const limit = ctx.flags.limitPerPhase;
-  const limitClause = limit ? ` limit ${Math.max(1, Math.floor(limit))}` : "";
-
+  // Fetch all active prod projects (archived = false only — complete is NOT archived).
   const prodRes = await ctx.prod.query<ProdProjectRefreshRow>(
     `select id, name, description, archived, client_id, status, project_seq, tags,
             requestor, deadline, last_activity_at, pm_note, project_code, client_slug,
             project_slug, storage_project_dir
        from projects
-       where id = ANY($1)
-       order by id asc` + limitClause,
-    [prodIds]
+       where archived = false
+       order by id asc`
   );
 
   let updated = 0;
@@ -225,12 +212,44 @@ export async function runProjectsPhaseRefresh(ctx: PhaseCtx): Promise<PhaseResul
   const errors: PhaseError[] = [];
 
   for (const row of prodRes.rows) {
-    const localId = localByProd.get(row.id);
-    if (!localId) continue;
     try {
+      await ctx.test.query("begin");
+
+      // 1. Check existing map row (any matched_existing value — both get updated now).
+      const mapHit = await ctx.test.query<{ local_id: string }>(
+        "select local_id from import_map_prod_projects where prod_id = $1",
+        [row.id]
+      );
+      let localId: string | null = mapHit.rows[0]?.local_id ?? null;
+
+      // 2. No map → try normalized-code match.
+      if (!localId && row.project_code) {
+        const byCode = await ctx.test.query<{ id: string }>(
+          String.raw`select id from projects where regexp_replace(lower(project_code), '^([a-z]+)-0*([0-9]+[a-z]?)$', '\1-\2') = regexp_replace(lower($1), '^([a-z]+)-0*([0-9]+[a-z]?)$', '\1-\2') limit 1`,
+          [row.project_code]
+        );
+        if (byCode.rows.length > 0) {
+          localId = byCode.rows[0].id;
+          // Write map row for future tracking.
+          await ctx.test.query(
+            "insert into import_map_prod_projects (prod_id, local_id, matched_existing) values ($1, $2, $3) on conflict (prod_id) do nothing",
+            [row.id, localId, true]
+          );
+        }
+      }
+
+      // 3. No map and no code match → skip.
+      if (!localId) {
+        await ctx.test.query("commit");
+        continue;
+      }
+
+      // 4. Resolve client_id via client map.
       const localClient = row.client_id
         ? await lookupMap(ctx, "import_map_prod_clients", row.client_id)
         : null;
+
+      // 5. Update mutable fields — identity/chronology columns excluded.
       await ctx.test.query(
         `update projects set
             name = $2,
@@ -268,16 +287,16 @@ export async function runProjectsPhaseRefresh(ctx: PhaseCtx): Promise<PhaseResul
           row.storage_project_dir,
         ]
       );
+      await ctx.test.query("commit");
       updated++;
     } catch (e) {
+      try { await ctx.test.query("rollback"); } catch { /* ignore */ }
       failed++;
       errors.push({ prodId: row.id, reason: (e as Error).message });
     }
   }
 
-  ctx.log(
-    `[projects:refresh] scanned=${prodRes.rows.length} updated=${updated} failed=${failed}`
-  );
+  ctx.log(`[projects:refresh] scanned=${prodRes.rows.length} updated=${updated} failed=${failed}`);
 
   return {
     entity: "projects",
