@@ -237,3 +237,51 @@ supabase/migrations/
 - BC2 import-map interaction (separate namespace, separate tables).
 - `auth.users` synchronization (only `public.user_profiles` is touched).
 - Scheduling (operator-invoked only; no cron).
+
+## 12. Integration verification log
+
+### 2026-05-12 — first real-data run on test DB
+
+Ran against the real test DB (not a throwaway) with `--limit-per-phase=5` after taking a `pg_dump` backup. Three production-data findings forced spec/code changes; final state ran cleanly end-to-end.
+
+**Findings and corrective changes:**
+
+1. **Files do not live in Supabase Storage.** The spec assumed Supabase Storage byte-copy. Actual storage is Dropbox (`project_files.dropbox_path` is the path of record; `dropbox_file_id` is the file identity). Refactored the files phase to use `dropbox.filesCopyV2` for server-side copy across paths within a single Dropbox account. Required new env var `PROD_DROPBOX_PROJECTS_ROOT_FOLDER` (= `/Projects`) alongside existing `DROPBOX_PROJECTS_ROOT_FOLDER` (= `/Projects-test`). Path rewrite is a simple prefix swap; rows whose `dropbox_path` doesn't start with `PROD_DROPBOX_PROJECTS_ROOT_FOLDER` fail as a row-level error.
+
+2. **Team Dropbox accounts need `pathRoot`.** A bare `new Dropbox({...})` client lands in the user's home namespace; the team's `/Projects` lives in the team root namespace. Routed the copy through the existing `lib/storage/dropbox-adapter.ts` (`DropboxStorageAdapter#copyFile`), which already handles `root_namespace_id`.
+
+3. **`projects.created_by` is not a `user_profiles` FK.** It's a `text not null` column with no FK constraint. Real prod data has 3590 projects with `created_by = 'bc2_import'` (a literal token from the BC2 import) plus ~30 projects with real UUIDs. The same is true of `discussion_threads.author_user_id`, `discussion_comments.author_user_id`, and `project_files.uploader_user_id`. Original importer threw on any unmapped value. Added `lib/sync/prod-to-test/phases/user-ref.ts` (`resolveUserRef`) with three-tier resolution: (a) existing map hit, (b) auto-import from prod's `user_profiles` if a row exists, (c) pass-through verbatim if the ref is a free-form token (no `user_profiles` row in prod).
+
+**Other operational notes:**
+
+- pg_dump 14 is incompatible with Supabase's Postgres 17 server (`server version: 17.6; pg_dump version: 14.18 (Homebrew) — aborting because of server version mismatch`). Use `/opt/homebrew/opt/postgresql@17/bin/pg_dump` (or any pg_dump ≥ 17). The `runBackup` module spawns whatever `pg_dump` is on `PATH`; callers must ensure the right version is reachable.
+- `supabase db push` is unusable against this project because the remote `supabase_migrations.schema_migrations` table contains timestamp-style migration names that don't match the local numeric filenames (`0001_init.sql`, etc.) — pre-existing drift. Migration `0030` was applied directly via `psql` against the session-pooler URL (port 5432). Subsequent migrations should use the same workaround unless the tracker is repaired.
+- `PROD_SUPABASE_SERVICE_ROLE_KEY` in `.env.local` is currently an `anon` role JWT. Harmless after the files phase moved off Supabase Storage; the orchestrator still validates the var is present but the Supabase JS clients it builds are unused. (Cleanup item: drop the four `*_SUPABASE_*` env requirements + the unused storage clients on `PhaseCtx`.)
+
+**Final run summary (per phase, after all fixes):**
+
+| Phase    | scanned | inserted | skipped | failed |
+|----------|--------:|---------:|--------:|-------:|
+| clients  |       5 |        4 |       1 |      0 |
+| users    |       2 |        1 |       1 |      0 |
+| projects |       5 |        5 |       0 |      0 |
+| threads  |       5 |        5 |       0 |      0 |
+| comments |       5 |        3 |       2 |      0 |
+| files    |       5 |        5 |       0 |      0 |
+
+**Test DB map snapshot after the runs:**
+
+| Map table                    | Rows |
+|------------------------------|-----:|
+| `import_map_prod_clients`    |   21 |
+| `import_map_prod_users`      |   14 (all of prod's users) |
+| `import_map_prod_projects`   |   20 |
+| `import_map_prod_threads`    |   15 |
+| `import_map_prod_comments`   |   10 |
+| `import_map_prod_files`      |   10 (5 actually copied in Dropbox during the green run) |
+
+**Idempotency:** confirmed for the users phase. Two consecutive `--phase=users --limit-per-phase=50` runs returned identical `scanned=1 inserted=0 skipped=1 failed=0` lines.
+
+**Known limitation surfaced by the real-data run:** with `--limit-per-phase=N`, child entities (threads / comments / files) frequently reference parents that fall outside the limit window for their phase. Those child rows fail with `unresolved <parent>` and the phase holds its watermark. The fix is operational, not code: run the importer **without** `--limit-per-phase` so each phase scoops up all parents before children need them. Limit is useful for smoke-testing only.
+
+**Backups taken during T14:** `backups/sync-prod-pre-0030-20260512-185541.dump` (pre-migration, 20.7 MB), plus a fresh backup at the start of every importer invocation (built into the script).
