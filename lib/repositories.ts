@@ -5,7 +5,7 @@ import { renderMarkdown } from "./markdown";
 import { DEFAULT_HOURLY_RATE_USD, MAX_EXPENSE_LINE_AMOUNT_USD, MAX_SITE_HOURLY_RATE_USD } from "./project-financials";
 import type { ProjectStatus } from "./project-status";
 import type { ClientRecord } from "./types/client-record";
-import type { ClientWithStats, ClientTabCounts, ClientDetailStats } from "./types/client-stats";
+import type { ClientWithStats, ClientTabCounts, ClientDetailStats, ClientProjectRow } from "./types/client-stats";
 
 export type UserProfile = {
   id: string;
@@ -369,6 +369,21 @@ export async function getClientWithStats(
       lastActivityAt: last_activity_at ?? null
     }
   };
+}
+
+export async function listClientProjects(
+  clientId: string,
+  filter: "active" | "archived"
+): Promise<ClientProjectRow[]> {
+  const result = await query(
+    `select id, name, status, last_activity_at, deadline, created_at
+     from projects
+     where client_id = $1
+       and archived = $2
+     order by name asc`,
+    [clientId, filter === "archived"]
+  );
+  return result.rows as ClientProjectRow[];
 }
 
 export async function getClientTabCounts(): Promise<ClientTabCounts> {

@@ -118,3 +118,37 @@ describe("getClientWithStats", () => {
     });
   });
 });
+
+describe("listClientProjects", () => {
+  beforeEach(() => { queryMock.mockReset(); });
+
+  it("filters active projects", async () => {
+    queryMock.mockResolvedValueOnce({
+      rows: [{
+        id: "p1", name: "Web", status: "in_progress",
+        last_activity_at: "2026-05-10T00:00:00.000Z",
+        deadline: "2026-06-01", created_at: "2026-03-14T00:00:00.000Z"
+      }]
+    });
+    const { listClientProjects } = await import("@/lib/repositories");
+    const rows = await listClientProjects("c1", "active");
+    expect(rows).toEqual([
+      {
+        id: "p1", name: "Web", status: "in_progress",
+        last_activity_at: "2026-05-10T00:00:00.000Z",
+        deadline: "2026-06-01", created_at: "2026-03-14T00:00:00.000Z"
+      }
+    ]);
+    const [sql, params] = queryMock.mock.calls[0];
+    expect(sql).toMatch(/where client_id = \$1\s+and archived = \$2/i);
+    expect(params).toEqual(["c1", false]);
+  });
+
+  it("filters archived projects", async () => {
+    queryMock.mockResolvedValueOnce({ rows: [] });
+    const { listClientProjects } = await import("@/lib/repositories");
+    await listClientProjects("c1", "archived");
+    const [, params] = queryMock.mock.calls[0];
+    expect(params).toEqual(["c1", true]);
+  });
+});
