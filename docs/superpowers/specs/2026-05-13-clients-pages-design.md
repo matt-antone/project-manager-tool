@@ -70,7 +70,7 @@ No schema changes. Tables used:
 
 Modify existing `app/clients/route.ts` GET handler. When `?stats=1` is present:
 
-- Returns `{ clients: ClientWithStats[], counts: { active: number, archived: number } }`.
+- Returns `{ active: ClientWithStats[], archived: ClientWithStats[], counts: { active: number, archived: number } }`.
 - Auth: existing `requireUser`.
 - Without `?stats=1`, behavior unchanged (returns plain `{ clients }` for backward compatibility with the settings page).
 

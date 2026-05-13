@@ -35,7 +35,7 @@ export function ClientHeader({
           <p className="clientHeaderLine">
             <strong>Repos:</strong>{" "}
             {repos.map((r, i) => (
-              <span key={r}>
+              <span key={`${i}-${r}`}>
                 <a href={repoHref(r)} target="_blank" rel="noreferrer">{r}</a>
                 {i < repos.length - 1 ? ", " : ""}
               </span>

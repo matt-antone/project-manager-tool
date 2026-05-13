@@ -46,22 +46,23 @@ export default function ClientDetailPage() {
         }
         if (cancelled) return;
         setAccessToken(session.accessToken);
-        const res = await fetch(`/clients/${clientId}?stats=1`, {
-          headers: { Authorization: `Bearer ${session.accessToken}` },
-          credentials: "same-origin"
-        });
-        if (res.status === 404) {
-          if (!cancelled) setNotFound(true);
-          return;
+        try {
+          const { data } = await authedJsonFetch({
+            accessToken: session.accessToken,
+            path: `/clients/${clientId}?stats=1`
+          });
+          if (cancelled) return;
+          const payload = data as { client: ClientRecord; stats: ClientDetailStats };
+          setClient(payload.client);
+          setStats(payload.stats);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : "Failed to load";
+          if (/client not found/i.test(message)) {
+            if (!cancelled) setNotFound(true);
+            return;
+          }
+          if (!cancelled) setError(message);
         }
-        if (!res.ok) throw new Error(`Failed: ${res.status}`);
-        const payload = (await res.json()) as {
-          client: ClientRecord;
-          stats: ClientDetailStats;
-        };
-        if (cancelled) return;
-        setClient(payload.client);
-        setStats(payload.stats);
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load");
       }
