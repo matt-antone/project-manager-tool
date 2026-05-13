@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { authedJsonFetch, fetchAuthSession } from "@/lib/browser-auth";
 import { PageLoadingState } from "@/components/loading-shells";
@@ -20,7 +20,7 @@ function parseTab(raw: string | null): Tab {
   return raw === "archived" ? "archived" : "active";
 }
 
-export default function ClientDetailPage() {
+function ClientDetailPageInner() {
   const params = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -127,5 +127,13 @@ export default function ClientDetailPage() {
         />
       ) : null}
     </div>
+  );
+}
+
+export default function ClientDetailPage() {
+  return (
+    <Suspense fallback={<PageLoadingState label="Client" message="Loading client..." />}>
+      <ClientDetailPageInner />
+    </Suspense>
   );
 }

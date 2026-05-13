@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { authedJsonFetch, fetchAuthSession } from "@/lib/browser-auth";
 import { PageLoadingState } from "@/components/loading-shells";
@@ -14,7 +14,7 @@ function parseTab(raw: string | null): Tab {
   return raw === "archived" ? "archived" : "active";
 }
 
-export default function ClientsPage() {
+function ClientsPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const tab = parseTab(searchParams.get("tab"));
@@ -76,5 +76,13 @@ export default function ClientsPage() {
       <ClientTabs current={tab} counts={data.counts} onChange={handleTabChange} />
       <ClientsTable rows={rows} tab={tab} />
     </div>
+  );
+}
+
+export default function ClientsPage() {
+  return (
+    <Suspense fallback={<PageLoadingState label="Clients" message="Loading clients..." />}>
+      <ClientsPageInner />
+    </Suspense>
   );
 }

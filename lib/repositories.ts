@@ -328,11 +328,11 @@ export async function listClientsWithStats(
      order by c.name asc`
   );
 
-  return result.rows.map((row: any) => ({
-    ...row,
+  return result.rows.map((row: Record<string, unknown>) => ({
+    ...(row as unknown as ClientRecord),
     active_project_count: Number(row.active_project_count ?? 0),
-    last_activity_at: row.last_activity_at ?? null
-  })) as ClientWithStats[];
+    last_activity_at: (row.last_activity_at as string | null) ?? null
+  }));
 }
 
 export async function getClientWithStats(
@@ -351,7 +351,7 @@ export async function getClientWithStats(
     [id]
   );
 
-  const row = result.rows[0];
+  const row = result.rows[0] as Record<string, unknown> | undefined;
   if (!row) return null;
 
   const {
@@ -359,14 +359,14 @@ export async function getClientWithStats(
     archived_project_count,
     last_activity_at,
     ...client
-  } = row as any;
+  } = row;
 
   return {
-    client: client as ClientRecord,
+    client: client as unknown as ClientRecord,
     stats: {
       activeProjectCount: Number(active_project_count ?? 0),
       archivedProjectCount: Number(archived_project_count ?? 0),
-      lastActivityAt: last_activity_at ?? null
+      lastActivityAt: (last_activity_at as string | null) ?? null
     }
   };
 }
