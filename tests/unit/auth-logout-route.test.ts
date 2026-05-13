@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 const clearAuthSessionCookiesMock = vi.fn();
@@ -8,13 +8,17 @@ vi.mock("@/lib/server-auth", () => ({
 }));
 
 describe("/auth/logout route", () => {
-  it("returns 405 for GET", async () => {
+  beforeEach(() => {
+    clearAuthSessionCookiesMock.mockClear();
+  });
+
+  it("redirects + clears cookies on GET", async () => {
     const { GET } = await import("@/app/auth/logout/route");
     const response = await GET(new NextRequest("http://localhost/auth/logout"));
 
-    expect(response.status).toBe(405);
-    await expect(response.json()).resolves.toEqual({ error: "Method not allowed" });
-    expect(clearAuthSessionCookiesMock).not.toHaveBeenCalled();
+    expect(response.status).toBe(307);
+    expect(response.headers.get("location")).toBe("http://localhost/");
+    expect(clearAuthSessionCookiesMock).toHaveBeenCalledTimes(1);
   });
 
   it("keeps POST logout behavior (redirect + cookie clear)", async () => {
