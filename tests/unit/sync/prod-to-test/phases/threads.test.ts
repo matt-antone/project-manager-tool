@@ -76,9 +76,9 @@ describe("runThreadsPhase", () => {
 
     await runThreadsPhase(ctx);
 
-    // The prod query call should have received the matched prod_id array as $2.
+    // The prod query call should have received the matched prod_id array as $1.
     const prodCall = (ctx.prod.query as any).mock.calls[0];
-    expect(prodCall[1][1]).toEqual(["matched-prod-p1"]);
+    expect(prodCall[1][0]).toEqual(["matched-prod-p1"]);
   });
 
   it("prod SELECT SQL contains active-job filter clauses", async () => {

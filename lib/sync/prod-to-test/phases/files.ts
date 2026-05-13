@@ -65,15 +65,14 @@ export async function runFilesPhase(ctx: PhaseCtx, deps: FilesPhaseDeps = {}): P
             t.size_bytes, t.dropbox_file_id, t.dropbox_path, t.checksum, t.thumbnail_url, t.bc_attachment_id,
             t.created_at
        from project_files t
-       where t.created_at > $1
-         and exists (
+       where exists (
            select 1 from projects p
             where p.id = t.project_id
               and p.archived = false
          )
-         and t.project_id <> all($2::uuid[])
+         and t.project_id <> all($1::uuid[])
        order by t.created_at asc, t.id asc` + limitClause;
-  const prodRes = await ctx.prod.query<ProdFileRow>(sql, [watermark, matchedProdProjectIds]);
+  const prodRes = await ctx.prod.query<ProdFileRow>(sql, [matchedProdProjectIds]);
 
   let inserted = 0;
   let skipped = 0;

@@ -35,15 +35,14 @@ export async function runCommentsPhase(ctx: PhaseCtx): Promise<PhaseResult> {
   const sql =
     `select t.id, t.project_id, t.thread_id, t.body_markdown, t.body_html, t.author_user_id, t.edited_at, t.created_at
        from discussion_comments t
-       where t.created_at > $1
-         and exists (
+       where exists (
            select 1 from projects p
             where p.id = t.project_id
               and p.archived = false
          )
-         and t.project_id <> all($2::uuid[])
+         and t.project_id <> all($1::uuid[])
        order by t.created_at asc, t.id asc` + limitClause;
-  const prodRes = await ctx.prod.query<ProdCommentRow>(sql, [watermark, matchedProdProjectIds]);
+  const prodRes = await ctx.prod.query<ProdCommentRow>(sql, [matchedProdProjectIds]);
 
   let inserted = 0;
   let skipped = 0;

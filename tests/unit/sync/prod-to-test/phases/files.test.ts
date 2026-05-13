@@ -146,7 +146,7 @@ describe("runFilesPhase", () => {
     await runFilesPhase(ctx, makeDeps({ ok: true, newId: "n", newPath: "n" }));
 
     const prodCall = (ctx.prod.query as any).mock.calls[0];
-    expect(prodCall[1][1]).toEqual(["matched-prod-p1"]);
+    expect(prodCall[1][0]).toEqual(["matched-prod-p1"]);
   });
 
   it("prod SELECT SQL contains active-job filter clauses", async () => {
