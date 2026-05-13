@@ -11,7 +11,6 @@ interface ProdUserRow {
   timezone: string | null;
   bio: string | null;
   is_legacy: boolean;
-  active: boolean | null;
   created_at: Date;
   last_seen_at: Date;
 }
@@ -22,7 +21,7 @@ export async function runUsersPhase(ctx: PhaseCtx): Promise<PhaseResult> {
 
   const sql =
     `select id, email, first_name, last_name, avatar_url, job_title, timezone, bio,
-            is_legacy, active, created_at, last_seen_at
+            is_legacy, created_at, last_seen_at
        from user_profiles
        where created_at > $1
        order by created_at asc, id asc` +
@@ -61,8 +60,8 @@ export async function runUsersPhase(ctx: PhaseCtx): Promise<PhaseResult> {
         await ctx.test.query(
           `insert into user_profiles
              (id, email, first_name, last_name, avatar_url, job_title, timezone, bio,
-              is_legacy, active, created_at, last_seen_at)
-           values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+              is_legacy, created_at, last_seen_at)
+           values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
            on conflict (id) do nothing`,
           [
             row.id,
@@ -74,7 +73,6 @@ export async function runUsersPhase(ctx: PhaseCtx): Promise<PhaseResult> {
             row.timezone,
             row.bio,
             row.is_legacy,
-            row.active,
             row.created_at,
             row.last_seen_at,
           ]
@@ -120,7 +118,6 @@ interface ProdUserRefreshRow {
   timezone: string | null;
   bio: string | null;
   is_legacy: boolean;
-  active: boolean | null;
   last_seen_at: Date;
 }
 
@@ -140,7 +137,7 @@ export async function runUsersPhaseRefresh(ctx: PhaseCtx): Promise<PhaseResult> 
 
   const prodRes = await ctx.prod.query<ProdUserRefreshRow>(
     `select id, email, first_name, last_name, avatar_url, job_title, timezone, bio,
-            is_legacy, active, last_seen_at
+            is_legacy, last_seen_at
        from user_profiles
        where id = ANY($1)
        order by id asc` + limitClause,
@@ -165,8 +162,7 @@ export async function runUsersPhaseRefresh(ctx: PhaseCtx): Promise<PhaseResult> 
             timezone = $7,
             bio = $8,
             is_legacy = $9,
-            active = $10,
-            last_seen_at = $11
+            last_seen_at = $10
           where id = $1`,
         [
           localId,
@@ -178,7 +174,6 @@ export async function runUsersPhaseRefresh(ctx: PhaseCtx): Promise<PhaseResult> 
           row.timezone,
           row.bio,
           row.is_legacy,
-          row.active,
           row.last_seen_at,
         ]
       );
