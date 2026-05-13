@@ -1496,6 +1496,14 @@ export async function countNonAuthorComments(args: {
   return typeof raw === "number" ? raw : Number(raw ?? 0);
 }
 
+export async function deleteThread(args: { projectId: string; threadId: string }) {
+  await query(
+    `delete from discussion_threads where id = $1 and project_id = $2`,
+    [args.threadId, args.projectId]
+  );
+  await touchProjectActivity(args.projectId);
+}
+
 export async function getThread(projectId: string, threadId: string) {
   const threadResult = await query(
     `select

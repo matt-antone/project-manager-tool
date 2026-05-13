@@ -31,3 +31,18 @@ describe("countNonAuthorComments", () => {
     expect(n).toBe(0);
   });
 });
+
+describe("deleteThread", () => {
+  it("issues a delete scoped to project + thread id and touches activity", async () => {
+    // First call: the DELETE. Second call: touchProjectActivity's internal query.
+    queryMock.mockResolvedValue({ rows: [] });
+    const { deleteThread } = await import("@/lib/repositories");
+    await deleteThread({ projectId: "p1", threadId: "t1" });
+    const [sql, params] = queryMock.mock.calls[0];
+    expect(sql).toMatch(/delete from discussion_threads/);
+    expect(sql).toMatch(/where id = \$1 and project_id = \$2/);
+    expect(params).toEqual(["t1", "p1"]);
+    // Activity touch invoked at least once after the delete.
+    expect(queryMock.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+});
