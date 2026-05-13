@@ -70,7 +70,6 @@ export async function runFilesPhase(ctx: PhaseCtx, deps: FilesPhaseDeps = {}): P
            select 1 from projects p
             where p.id = t.project_id
               and p.archived = false
-              and (p.status is null or p.status <> 'complete')
          )
          and t.project_id <> all($2::uuid[])
        order by t.created_at asc, t.id asc` + limitClause;

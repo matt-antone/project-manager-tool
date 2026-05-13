@@ -158,6 +158,6 @@ describe("runFilesPhase", () => {
 
     const prodSql: string = (ctx.prod.query as any).mock.calls[0][0];
     expect(prodSql).toMatch(/archived = false/);
-    expect(prodSql).toMatch(/<> 'complete'/);
+    // status <> 'complete' removed — complete is workflow state, not archived
   });
 });
