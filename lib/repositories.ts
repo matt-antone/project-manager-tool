@@ -5,7 +5,7 @@ import { renderMarkdown } from "./markdown";
 import { DEFAULT_HOURLY_RATE_USD, MAX_EXPENSE_LINE_AMOUNT_USD, MAX_SITE_HOURLY_RATE_USD } from "./project-financials";
 import type { ProjectStatus } from "./project-status";
 import type { ClientRecord } from "./types/client-record";
-import type { ClientWithStats } from "./types/client-stats";
+import type { ClientWithStats, ClientTabCounts } from "./types/client-stats";
 
 export type UserProfile = {
   id: string;
@@ -333,6 +333,17 @@ export async function listClientsWithStats(
     active_project_count: Number(row.active_project_count ?? 0),
     last_activity_at: row.last_activity_at ?? null
   })) as ClientWithStats[];
+}
+
+export async function getClientTabCounts(): Promise<ClientTabCounts> {
+  const result = await query(
+    `select
+       count(*) filter (where archived_at is null) as active,
+       count(*) filter (where archived_at is not null) as archived
+     from clients`
+  );
+  const row = result.rows[0] ?? { active: 0, archived: 0 };
+  return { active: Number(row.active ?? 0), archived: Number(row.archived ?? 0) };
 }
 
 /** Same CASE as `display_name` — use for ORDER BY title / tie-breaks. */

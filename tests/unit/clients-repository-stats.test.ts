@@ -67,3 +67,26 @@ describe("listClientsWithStats", () => {
     expect(rows[0].last_activity_at).toBeNull();
   });
 });
+
+describe("getClientTabCounts", () => {
+  beforeEach(() => {
+    queryMock.mockReset();
+  });
+
+  it("returns active and archived client counts as numbers", async () => {
+    queryMock.mockResolvedValueOnce({
+      rows: [{ active: "12", archived: "5" }]
+    });
+    const { getClientTabCounts } = await import("@/lib/repositories");
+    const counts = await getClientTabCounts();
+    expect(counts).toEqual({ active: 12, archived: 5 });
+  });
+
+  it("returns zero counts when no clients", async () => {
+    queryMock.mockResolvedValueOnce({
+      rows: [{ active: "0", archived: "0" }]
+    });
+    const { getClientTabCounts } = await import("@/lib/repositories");
+    expect(await getClientTabCounts()).toEqual({ active: 0, archived: 0 });
+  });
+});
