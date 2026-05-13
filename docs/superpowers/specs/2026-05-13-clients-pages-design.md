@@ -16,8 +16,12 @@ Editing client metadata is reachable from the detail page via an inline modal th
 
 In scope:
 
-- New routes `app/clients/page.tsx` and `app/clients/[id]/page.tsx` (React Server Components).
+- New routes `app/clients/page.tsx` and `app/clients/[id]/page.tsx` as client components, following the existing app pattern (bootstrap + `authedJsonFetch`).
 - New repository functions for stats aggregation.
+- New GET API endpoints to serve those repository functions to the client:
+  - `GET /clients?stats=1` — clients + stats.
+  - `GET /clients/[id]?stats=1` — client + counts + last activity.
+  - `GET /clients/[id]/projects?filter=active|archived` — projects for client.
 - New components under `components/clients/`.
 - A `Clients` link in `app/header.tsx`.
 - Inline client edit dialog on the detail page, wrapping the existing settings client form.
@@ -27,7 +31,6 @@ Out of scope:
 - Schema changes (none needed).
 - Sort / search / pagination on tables.
 - Admin-only gating (all authenticated members can view).
-- New API endpoints for the read path — RSC calls the repository directly.
 
 ## Permissions
 
@@ -37,16 +40,17 @@ Authenticated members only. Uses existing `lib/server-auth.ts`; unauthenticated 
 
 ### `app/clients/page.tsx`
 
-- RSC. Reads `?tab=active|archived` from `searchParams`; invalid values fall back to `active`.
-- Calls `listClientsWithStats(filter)` and `getClientTabCounts()` (returns `{ active, archived }`).
+- Client component (`"use client"`). Same auth bootstrap as `app/settings/page.tsx` (uses `fetchAuthSession` and `authedJsonFetch`).
+- Local state `tab: 'active' | 'archived'` syncs to `?tab=` via `useRouter`/`useSearchParams`. Invalid values fall back to `active`.
+- On mount and on `tab` change: calls `GET /clients?stats=1` once (returns both active and archived rows + counts), partitions them client-side for the visible tab.
 - Renders header (`<h1>Clients</h1>`), `<ClientTabs />`, and `<ClientsTable rows={...} />`.
 
 ### `app/clients/[id]/page.tsx`
 
-- RSC. Reads `?tab=active|archived` (default `active`).
-- Calls `getClientWithStats(id)` → returns client row + counts of active/archived projects + max last_activity_at across active projects. Calls `notFound()` if missing.
-- Calls `listClientProjects(id, filter)`.
-- Renders `<ClientHeader client={...} counts={...} lastActivityAt={...} />`, `<ClientTabs counts={...} />`, `<ClientProjectsTable rows={...} />`.
+- Client component (`"use client"`). Reads `[id]` from `useParams`; reads `?tab=` from `useSearchParams` (default `active`, invalid → `active`).
+- On mount: calls `GET /clients/[id]?stats=1`. On 404, renders an inline "Client not found" state. On other errors, an error message + retry button.
+- On `tab` change: calls `GET /clients/[id]/projects?filter=<tab>`.
+- Renders `<ClientHeader client={...} counts={...} lastActivityAt={...} onEdit={...} />`, `<ClientTabs counts={...} />`, `<ClientProjectsTable rows={...} />`, and a `<ClientEditDialog />` mounted hidden until Edit is clicked.
 
 ## Navigation
 
@@ -58,7 +62,33 @@ No schema changes. Tables used:
 
 - `clients` — `id`, `name`, `archived_at`, `github_repos` (text[]), `domains` (text[]).
 - `projects` — `id`, `client_id`, `name`, `archived`, `status`, `last_activity_at` (from migration 0016), `deadline` (from migration 0010), `created_at`.
-- Hours source for "Hours YTD" — confirm exact table/columns during implementation (likely `user_project_hours`); column name for the worked-on date and hours amount will be verified before writing the SQL. The fallback if no canonical per-day hours table exists is to use whichever project-hours aggregate the existing `/projects` views rely on.
+- No hours column for v1. The only hours table (`project_user_hours`) is a cumulative per-user/project total without a date axis, so calendar-YTD cannot be computed honestly. Revisit when a per-day hours log exists.
+
+## API routes
+
+### `GET /clients?stats=1`
+
+Modify existing `app/clients/route.ts` GET handler. When `?stats=1` is present:
+
+- Returns `{ clients: ClientWithStats[], counts: { active: number, archived: number } }`.
+- Auth: existing `requireUser`.
+- Without `?stats=1`, behavior unchanged (returns plain `{ clients }` for backward compatibility with the settings page).
+
+### `GET /clients/[id]?stats=1`
+
+Modify existing `app/clients/[id]/route.ts` GET handler. When `?stats=1` is present:
+
+- Returns `{ client: ClientRecord, stats: { activeProjectCount: number, archivedProjectCount: number, lastActivityAt: string | null } }`.
+- 404 when client not found.
+- Without `?stats=1`, behavior unchanged.
+
+### `GET /clients/[id]/projects?filter=active|archived`
+
+New route `app/clients/[id]/projects/route.ts`.
+
+- Auth: `requireUser`.
+- Validates `filter` with zod (`z.enum(['active', 'archived'])`); invalid → 400.
+- Returns `{ projects: ProjectRow[] }`. Empty array if none.
 
 ## Repository functions
 
@@ -72,14 +102,9 @@ select
   c.name,
   c.archived_at,
   count(p.id) filter (where p.archived = false) as active_project_count,
-  max(p.last_activity_at) filter (where p.archived = false) as last_activity_at,
-  coalesce(
-    sum(uph.hours) filter (where uph.worked_on >= date_trunc('year', now())),
-    0
-  ) as hours_ytd
+  max(p.last_activity_at) filter (where p.archived = false) as last_activity_at
 from clients c
 left join projects p on p.client_id = c.id
-left join user_project_hours uph on uph.project_id = p.id
 where c.archived_at is null   -- or `is not null` for archived
 group by c.id
 order by c.name;
@@ -124,7 +149,7 @@ All new components live in `components/clients/`.
 
 ### `<ClientsTable rows={ClientWithStats[]} />`
 
-Columns: Name (link styling) · Active projects · Last activity · Hours YTD. Whole `<tr>` is wrapped in or behaves as a Next `Link` to `/clients/[id]`. Empty state when `rows.length === 0`:
+Columns: Name (link styling) · Active projects · Last activity. Whole `<tr>` is wrapped in or behaves as a Next `Link` to `/clients/[id]`. Empty state when `rows.length === 0`:
 
 - Active tab: "No active clients."
 - Archived tab: "No archived clients."
@@ -166,7 +191,6 @@ If extraction proves too disruptive for this PR, fall back to keeping the dialog
 
 ## Display rules
 
-- `hours_ytd` — render with 1 decimal place (`142.5`). NULL/zero renders as `0.0`.
 - `last_activity_at` NULL — render `—`.
 - `deadline` NULL — render `—`.
 - Empty `github_repos` / `domains` arrays — omit that line in the header entirely.
@@ -185,7 +209,7 @@ If extraction proves too disruptive for this PR, fall back to keeping the dialog
 
 ### Repository (Vitest)
 
-- `listClientsWithStats('active')` excludes clients with `archived_at != null`. Includes only non-archived projects in `active_project_count` and `last_activity_at`. `hours_ytd` sums all matching `user_project_hours` for the calendar year (active and archived projects together).
+- `listClientsWithStats('active')` excludes clients with `archived_at != null`. Includes only non-archived projects in `active_project_count` and `last_activity_at`.
 - `listClientsWithStats('archived')` returns only archived clients with the same stat semantics.
 - `getClientTabCounts()` counts active and archived clients correctly.
 - `getClientWithStats(id)` — returns `null` for unknown id; correct active/archived counts; `lastActivityAt` reflects active projects only.
@@ -193,7 +217,7 @@ If extraction proves too disruptive for this PR, fall back to keeping the dialog
 
 ### Components
 
-- `<ClientsTable />` — renders rows; empty state copy per tab; row link href; hours rendered as `0.0` for null/zero.
+- `<ClientsTable />` — renders rows; empty state copy per tab; row link href; NULL `last_activity_at` rendered as `—`.
 - `<ClientProjectsTable />` — status badge maps known statuses; NULL `deadline` and `last_activity_at` render `—`.
 - `<ClientTabs />` — labels include counts; clicking updates `?tab=`.
 - `<ClientHeader />` — archive badge shown iff `archived_at != null`; repos line omitted when array empty; domains line omitted when array empty.
@@ -214,6 +238,5 @@ If extraction proves too disruptive for this PR, fall back to keeping the dialog
 
 ## Open implementation questions (resolved during plan, not blocking design)
 
-- Exact hours source table/columns (most likely `user_project_hours`; verify against `/projects` aggregate queries).
 - Whether to extract the settings client form fully or wrap it for v1 (preference: extract).
 - Existing status-badge component name — reuse or add new.
