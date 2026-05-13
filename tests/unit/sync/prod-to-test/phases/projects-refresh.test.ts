@@ -39,7 +39,13 @@ describe("runProjectsPhaseRefresh", () => {
   it("updates mutable fields on a mapped project (matched_existing=false), resolving client_id via map", async () => {
     const ctx = makeCtx();
 
-    (ctx.prod.query as any).mockResolvedValueOnce({ rows: [sampleProdRow] });
+    (ctx.prod.query as any).mockImplementation((sql: string) => {
+      if (/from projects/i.test(sql) && !/members|expense|hours/i.test(sql)) {
+        return { rows: [sampleProdRow] };
+      }
+      // sub-table queries — empty on prod side
+      return { rows: [] };
+    });
 
     const seen: Array<{ sql: string; params: any[] }> = [];
     (ctx.test as any).query = vi.fn((sql: string, params: any[] = []) => {
@@ -73,7 +79,12 @@ describe("runProjectsPhaseRefresh", () => {
   it("also updates mapped projects with matched_existing=true (prod status wins)", async () => {
     const ctx = makeCtx();
 
-    (ctx.prod.query as any).mockResolvedValueOnce({ rows: [{ ...sampleProdRow, status: "complete" }] });
+    (ctx.prod.query as any).mockImplementation((sql: string) => {
+      if (/from projects/i.test(sql) && !/members|expense|hours/i.test(sql)) {
+        return { rows: [{ ...sampleProdRow, status: "complete" }] };
+      }
+      return { rows: [] };
+    });
 
     const seen: Array<{ sql: string; params: any[] }> = [];
     (ctx.test as any).query = vi.fn((sql: string, params: any[] = []) => {
@@ -102,7 +113,12 @@ describe("runProjectsPhaseRefresh", () => {
   it("unmapped test row + code match → writes map row and updates", async () => {
     const ctx = makeCtx();
 
-    (ctx.prod.query as any).mockResolvedValueOnce({ rows: [sampleProdRow] });
+    (ctx.prod.query as any).mockImplementation((sql: string) => {
+      if (/from projects/i.test(sql) && !/members|expense|hours/i.test(sql)) {
+        return { rows: [sampleProdRow] };
+      }
+      return { rows: [] };
+    });
 
     const seen: Array<{ sql: string; params: any[] }> = [];
     (ctx.test as any).query = vi.fn((sql: string, params: any[] = []) => {

@@ -41,6 +41,73 @@ function suffixFor(localId: string): string {
   return `-p${localId.replace(/-/g, "").slice(0, 8)}`;
 }
 
+async function syncProjectSubTables(
+  ctx: PhaseCtx,
+  prodProjectId: string,
+  localProjectId: string
+): Promise<void> {
+  // 1. Members
+  await ctx.test.query("delete from project_members where project_id = $1", [localProjectId]);
+  const membersRes = await ctx.prod.query<{ user_id: string; added_at: Date }>(
+    "select user_id, added_at from project_members where project_id = $1",
+    [prodProjectId]
+  );
+  for (const m of membersRes.rows) {
+    const localUserId = await resolveUserRef(ctx, m.user_id);
+    await ctx.test.query(
+      `insert into project_members (project_id, user_id, added_at)
+       values ($1, $2, $3)
+       on conflict (project_id, user_id) do nothing`,
+      [localProjectId, localUserId, m.added_at]
+    );
+  }
+
+  // 2. Expense lines
+  await ctx.test.query(
+    "delete from project_expense_lines where project_id = $1",
+    [localProjectId]
+  );
+  const expensesRes = await ctx.prod.query<{
+    label: string;
+    amount: string;
+    sort_order: number;
+    created_at: Date;
+  }>(
+    "select label, amount, sort_order, created_at from project_expense_lines where project_id = $1 order by sort_order, created_at",
+    [prodProjectId]
+  );
+  for (const e of expensesRes.rows) {
+    await ctx.test.query(
+      `insert into project_expense_lines (project_id, label, amount, sort_order, created_at)
+       values ($1, $2, $3, $4, $5)`,
+      [localProjectId, e.label, e.amount, e.sort_order, e.created_at]
+    );
+  }
+
+  // 3. User hours
+  await ctx.test.query(
+    "delete from project_user_hours where project_id = $1",
+    [localProjectId]
+  );
+  const hoursRes = await ctx.prod.query<{
+    user_id: string;
+    hours: string;
+    created_at: Date;
+  }>(
+    "select user_id, hours, created_at from project_user_hours where project_id = $1",
+    [prodProjectId]
+  );
+  for (const h of hoursRes.rows) {
+    const localUserId = await resolveUserRef(ctx, h.user_id);
+    await ctx.test.query(
+      `insert into project_user_hours (project_id, user_id, hours, created_at)
+       values ($1, $2, $3, $4)
+       on conflict (project_id, user_id) do nothing`,
+      [localProjectId, localUserId, h.hours, h.created_at]
+    );
+  }
+}
+
 export async function runProjectsPhase(ctx: PhaseCtx): Promise<PhaseResult> {
   const watermark = ctx.watermarks.get("projects") ?? new Date(0);
   const limit = ctx.flags.limitPerPhase;
@@ -150,6 +217,7 @@ export async function runProjectsPhase(ctx: PhaseCtx): Promise<PhaseResult> {
         "insert into import_map_prod_projects (prod_id, local_id, matched_existing) values ($1, $2, $3)",
         [row.id, localId, matchedExisting]
       );
+      await syncProjectSubTables(ctx, row.id, localId);
       await ctx.test.query("commit");
       inserted++;
       if (row.created_at > maxSeen) maxSeen = row.created_at;
@@ -286,6 +354,7 @@ export async function runProjectsPhaseRefresh(ctx: PhaseCtx): Promise<PhaseResul
           row.storage_project_dir,
         ]
       );
+      await syncProjectSubTables(ctx, row.id, localId);
       await ctx.test.query("commit");
       updated++;
     } catch (e) {
