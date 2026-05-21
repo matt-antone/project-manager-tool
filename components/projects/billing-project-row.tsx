@@ -84,7 +84,7 @@ export function BillingProjectRow({ project, onArchive, onReopen }: Props) {
   return (
     <li className="archiveProjectRow">
       <div className={`archiveProjectStatus tone-${column}`} aria-label={column.replace("_", " ")} />
-      <div className={`flex flex-col md:flex-row md:gap-6 ${hasBreakdown ? "md:basis-full" : ""}`}>
+      <div className={`flex flex-col md:grid md:grid-cols-2 md:gap-6 ${hasBreakdown ? "md:basis-full" : ""}`}>
         <div className={hasBreakdown ? "md:basis-1/2 md:flex-1 md:min-w-0" : "md:basis-full"}>
           <div className="archiveProjectBody">
             <div className="archiveProjectMeta">
