@@ -41,3 +41,5 @@ tmp/bc2-import-summary.json
 
 # Audit + ad-hoc tooling output
 tmp/
+
+.omc/state/*
