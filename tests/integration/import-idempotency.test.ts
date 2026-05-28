@@ -77,7 +77,11 @@ vi.mock("@/lib/db", () => ({
 }));
 
 vi.mock("@/lib/repositories", () => ({
-  createProject: vi.fn(async () => ({ id: "local-project-1" })),
+  createProject: vi.fn(async () => ({
+    project: { id: "local-project-1" },
+    skippedInactiveUserIds: [],
+    addedMemberEmails: []
+  })),
   getProject: vi.fn(async () => ({ id: "local-project-1" })),
   createThread: vi.fn(async () => ({ id: "local-thread-1" })),
   createComment: vi.fn(async () => ({ id: "local-comment-1" })),

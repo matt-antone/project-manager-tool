@@ -26,7 +26,7 @@ type ProjectDialogMember = {
   last_name: string | null;
 };
 
-type ProjectDialogActiveUser = {
+export type ProjectDialogActiveUser = {
   id: string;
   email: string;
   first_name: string | null;
@@ -44,6 +44,8 @@ type ProjectDialogFormProps = {
   showPmNote?: boolean;
   members?: ProjectDialogMember[];
   activeUsers?: ProjectDialogActiveUser[];
+  /** When set, renders this user's row as checked + disabled (creator lock). */
+  currentUserId?: string;
   onAddMember?: (userId: string) => void;
   onRemoveMember?: (userId: string) => void;
   onChange: (values: ProjectDialogValues) => void;
@@ -61,6 +63,7 @@ export function ProjectDialogForm({
   showPmNote = false,
   members,
   activeUsers,
+  currentUserId,
   onAddMember,
   onRemoveMember,
   onChange,
@@ -155,9 +158,21 @@ export function ProjectDialogForm({
             <legend>Members</legend>
             <ul className="memberCheckboxList">
               {activeUsers!.map((u) => {
+                const isSelf = currentUserId !== undefined && u.id === currentUserId;
                 const isMember = members!.some((m) => m.user_id === u.id);
                 const isLastMember = isMember && members!.length <= 1;
                 const displayName = [u.first_name, u.last_name].filter(Boolean).join(" ") || u.email;
+                if (isSelf) {
+                  return (
+                    <li key={u.id} className="memberCheckboxItem">
+                      <label>
+                        <input type="checkbox" checked disabled onChange={() => {}} />
+                        <span className="memberCheckboxName">{displayName} (you)</span>
+                      </label>
+                      <small className="memberCheckboxHint">Project creator is always a member</small>
+                    </li>
+                  );
+                }
                 return (
                   <li key={u.id} className="memberCheckboxItem">
                     <label>

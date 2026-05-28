@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import type { ProjectDialogValues } from "@/components/project-dialog-form";
+import type { ProjectDialogActiveUser, ProjectDialogValues } from "@/components/project-dialog-form";
 import { PageLoadingState } from "@/components/loading-shells";
 import { createClientResource } from "@/lib/client-resource";
 import {
@@ -73,6 +73,7 @@ type ProjectsBootstrap = {
   accessToken: string | null;
   status: string;
   domainAllowed: boolean;
+  userId: string | null;
   clients: ClientRecord[];
   projects: Project[];
   latestFeaturedPosts: FeaturedFeedPost[];
@@ -84,6 +85,11 @@ type ProjectsWorkspaceContextValue = {
   status: string;
   setStatus: (s: string) => void;
   domainAllowed: boolean;
+  userId: string | null;
+  activeUsers: ProjectDialogActiveUser[];
+  selectedMemberIds: string[];
+  addMember: (userId: string) => void;
+  removeMember: (userId: string) => void;
   clients: ClientRecord[];
   projects: Project[];
   setProjects: Dispatch<SetStateAction<Project[]>>;
@@ -186,9 +192,20 @@ function ProjectsWorkspaceInner({ initial, children }: { initial: ProjectsBootst
   const [activeSearch, setActiveSearch] = useState("");
   const [projectSort, setProjectSort] = useState<ProjectSort>("title");
 
+  const userId = initial.userId;
   const [projectForm, setProjectForm] = useState<ProjectDialogValues>(createProjectDialogValues());
   const [isCreatingProject, setIsCreatingProject] = useState(false);
+  const [activeUsers, setActiveUsers] = useState<ProjectDialogActiveUser[]>([]);
+  const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
+  const activeUsersLoadedRef = useRef(false);
   const createDialogRef = useRef<HTMLDialogElement | null>(null);
+
+  const addMember = useCallback((id: string) => {
+    setSelectedMemberIds((current) => (current.includes(id) ? current : [...current, id]));
+  }, []);
+  const removeMember = useCallback((id: string) => {
+    setSelectedMemberIds((current) => current.filter((x) => x !== id));
+  }, []);
   const refreshAbortControllerRef = useRef<AbortController | null>(null);
   const projectSortRef = useRef<ProjectSort>("title");
   projectSortRef.current = projectSort;
@@ -287,6 +304,8 @@ function ProjectsWorkspaceInner({ initial, children }: { initial: ProjectsBootst
   const createProject = useCallback(async () => {
     setIsCreatingProject(true);
     try {
+      // Filter out the creator's id — server adds creator regardless.
+      const memberIds = selectedMemberIds.filter((id) => id !== userId);
       const data = (await authedFetch("/projects", {
         method: "POST",
         body: JSON.stringify({
@@ -295,25 +314,52 @@ function ProjectsWorkspaceInner({ initial, children }: { initial: ProjectsBootst
           deadline: projectForm.deadline || null,
           clientId: projectForm.clientId,
           tags: parseProjectTags(projectForm.tags),
-          requestor: projectForm.requestor.trim() || null
+          requestor: projectForm.requestor.trim() || null,
+          ...(memberIds.length > 0 ? { memberIds } : {})
         })
-      })) as { project?: { id?: string } };
+      })) as {
+        project?: { id?: string };
+        warnings?: { skippedInactiveUserIds?: string[] };
+      };
       const projectId = data?.project?.id;
       if (!projectId) {
         throw new Error("Project created without an id");
       }
+      if (data?.warnings?.skippedInactiveUserIds?.length) {
+        const skippedNames = data.warnings.skippedInactiveUserIds
+          .map((id) => {
+            const u = activeUsers.find((x) => x.id === id);
+            if (!u) return id;
+            return [u.first_name, u.last_name].filter(Boolean).join(" ") || u.email;
+          })
+          .join(", ");
+        setStatus(`Skipped ${data.warnings.skippedInactiveUserIds.length} user(s) no longer active: ${skippedNames}`);
+      }
       setProjectForm(createProjectDialogValues(createProjectClients[0]?.id ?? ""));
+      setSelectedMemberIds([]);
       createDialogRef.current?.close();
       router.push(`/${projectId}`);
     } finally {
       setIsCreatingProject(false);
     }
-  }, [authedFetch, createProjectClients, projectForm, router]);
+  }, [activeUsers, authedFetch, createProjectClients, projectForm, router, selectedMemberIds, userId]);
 
   const openCreateDialog = useCallback(() => {
     setProjectForm(createProjectDialogValues(createProjectClients[0]?.id ?? ""));
+    setSelectedMemberIds([]);
+    if (!activeUsersLoadedRef.current) {
+      activeUsersLoadedRef.current = true;
+      authedFetch("/users/active")
+        .then((data) => {
+          const users = (data as { users?: ProjectDialogActiveUser[] } | null)?.users ?? [];
+          setActiveUsers(users);
+        })
+        .catch(() => {
+          activeUsersLoadedRef.current = false;
+        });
+    }
     createDialogRef.current?.showModal();
-  }, [createProjectClients]);
+  }, [authedFetch, createProjectClients]);
 
   const toggleArchive = useCallback(
     async (project: Project) => {
@@ -407,6 +453,11 @@ function ProjectsWorkspaceInner({ initial, children }: { initial: ProjectsBootst
     status,
     setStatus,
     domainAllowed,
+    userId,
+    activeUsers,
+    selectedMemberIds,
+    addMember,
+    removeMember,
     clients,
     projects,
     setProjects,
@@ -473,6 +524,7 @@ async function loadProjectsBootstrap(): Promise<ProjectsBootstrap> {
         accessToken: null,
         status: getProjectsPageAuthErrorStatus() ?? session.status,
         domainAllowed: session.domainAllowed,
+        userId: null,
         clients: [],
         projects: [],
         latestFeaturedPosts
@@ -488,6 +540,7 @@ async function loadProjectsBootstrap(): Promise<ProjectsBootstrap> {
       accessToken: clientsResponse.accessToken,
       status: session.status,
       domainAllowed: session.domainAllowed,
+      userId: session.user?.id ?? null,
       clients: (clientsResponse.data?.clients ?? []) as ClientRecord[],
       projects: (projectsResponse.data?.projects ?? []) as Project[],
       latestFeaturedPosts
@@ -497,6 +550,7 @@ async function loadProjectsBootstrap(): Promise<ProjectsBootstrap> {
       accessToken: null,
       status: error instanceof Error ? error.message : "Unable to load workspace",
       domainAllowed: false,
+      userId: null,
       clients: [],
       projects: [],
       latestFeaturedPosts

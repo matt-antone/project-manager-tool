@@ -117,7 +117,7 @@ export async function runBasecampImport(jobId: string, payload: BasecampImportPa
         continue;
       }
 
-      const created = await createProject({
+      const { project: created } = await createProject({
         name: project.name,
         description: project.description,
         createdBy: project.createdBy
