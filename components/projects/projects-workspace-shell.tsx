@@ -46,8 +46,18 @@ export function ProjectsWorkspaceShell({
     isCreatingProject,
     createProject,
     setStatus,
-    featuredFeedStatus
+    featuredFeedStatus,
+    userId,
+    activeUsers,
+    selectedMemberIds,
+    addMember,
+    removeMember
   } = useProjectsWorkspace();
+
+  const dialogMembers = selectedMemberIds.flatMap((id) => {
+    const u = activeUsers.find((x) => x.id === id);
+    return u ? [{ user_id: u.id, email: u.email, first_name: u.first_name, last_name: u.last_name }] : [];
+  });
 
   const featuredHeroPost = latestFeaturedPosts[0] ?? null;
   const feedRailPosts = latestFeaturedPosts.length > 1 ? latestFeaturedPosts.slice(1) : latestFeaturedPosts;
@@ -138,6 +148,11 @@ export function ProjectsWorkspaceShell({
           values={projectForm}
           clients={creatableClients}
           submitting={isCreatingProject}
+          members={dialogMembers}
+          activeUsers={activeUsers}
+          currentUserId={userId ?? undefined}
+          onAddMember={addMember}
+          onRemoveMember={removeMember}
           onChange={setProjectForm}
           onSubmit={() => createProject().catch((error) => setStatus(error instanceof Error ? error.message : "Create failed"))}
           onCancel={() => createDialogRef.current?.close()}

@@ -187,7 +187,7 @@ export function SettingsPageContent({ initial }: { initial: SettingsBootstrap })
   }
 
   async function loadClients(accessToken: string) {
-    const data = await authedFetch(accessToken, "/clients");
+    const data = await authedFetch(accessToken, "/api/clients");
     setClients((data?.clients ?? []) as ClientRecord[]);
   }
 
@@ -251,7 +251,7 @@ export function SettingsPageContent({ initial }: { initial: SettingsBootstrap })
     setClientDialogError(undefined);
     try {
       if (isClientEdit) {
-        await authedFetch(token, `/clients/${clientEditingId}`, {
+        await authedFetch(token, `/api/clients/${clientEditingId}`, {
           method: "PATCH",
           body: JSON.stringify({
             name: trimmedClientName,
@@ -261,7 +261,7 @@ export function SettingsPageContent({ initial }: { initial: SettingsBootstrap })
         });
         setStatus("Client updated");
       } else {
-        await authedFetch(token, "/clients", {
+        await authedFetch(token, "/api/clients", {
           method: "POST",
           body: JSON.stringify({
             name: trimmedClientName,
@@ -295,7 +295,7 @@ export function SettingsPageContent({ initial }: { initial: SettingsBootstrap })
     }
 
     try {
-      await authedFetch(token, `/clients/${client.id}/${action}`, { method: "POST" });
+      await authedFetch(token, `/api/clients/${client.id}/${action}`, { method: "POST" });
       setStatus(isArchive ? `Archiving ${client.name}...` : `Restoring ${client.name}...`);
       await loadClients(token);
     } catch (error) {
@@ -321,7 +321,7 @@ export function SettingsPageContent({ initial }: { initial: SettingsBootstrap })
       try {
         const updates = await Promise.all(
           ids.map(async (clientId) => {
-            const data = await authedFetch(token, `/clients/${clientId}`);
+            const data = await authedFetch(token, `/api/clients/${clientId}`);
             return (data?.client ?? null) as ClientRecord | null;
           })
         );

@@ -99,7 +99,7 @@ async function loadSettingsBootstrap(): Promise<SettingsBootstrap> {
     }
 
     const [clientsData, profileData] = await Promise.all([
-      authedJsonFetch({ accessToken, path: "/clients" }),
+      authedJsonFetch({ accessToken, path: "/api/clients" }),
       authedJsonFetch({ accessToken, path: "/profile" })
     ]);
 

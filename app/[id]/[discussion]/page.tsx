@@ -12,7 +12,7 @@ import { uploadAttachment } from "@/lib/attachment-upload";
 import { triggerBrowserDownload } from "@/lib/browser-download";
 import { createClientResource } from "@/lib/client-resource";
 import { useEffect, useRef, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 
 const MarkdownEditor = dynamic(() => import("@/components/markdown-editor"), {
   ssr: false,
@@ -144,6 +144,12 @@ function DiscussionPageContent(props: {
   const [isSavingThread, setIsSavingThread] = useState(false);
   const commentFileInputRef = useRef<HTMLInputElement | null>(null);
 
+  useEffect(() => {
+    const threadTitle = thread?.title?.trim();
+    if (threadTitle) document.title = `${threadTitle} — ${projectDisplayName}`;
+    else document.title = projectDisplayName;
+  }, [thread?.title, projectDisplayName]);
+
   async function authedFetch(accessToken: string, path: string, options: RequestInit = {}) {
     const { accessToken: nextToken, data } = await authedJsonFetch({
       accessToken,
@@ -258,6 +264,22 @@ function DiscussionPageContent(props: {
 
   function cancelEditingThread() {
     setIsEditingThread(false);
+  }
+
+  const router = useRouter();
+
+  async function deleteThreadAction() {
+    if (!projectId || !discussionId) return;
+    if (!window.confirm("Delete this discussion? This cannot be undone.")) return;
+    try {
+      if (!token) throw new Error("Sign in to delete this discussion.");
+      await authedFetch(token, `/projects/${projectId}/threads/${discussionId}`, {
+        method: "DELETE"
+      });
+      router.push(`/${projectId}`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not delete discussion");
+    }
   }
 
   async function saveThreadEdit() {
@@ -393,9 +415,16 @@ function DiscussionPageContent(props: {
                   {thread.edited_at ? " (edited)" : ""}
                 </small>
                 {currentUser?.id === thread.author_user_id && !isEditingThread && (
-                  <OneShotButton type="button" className="terciary" onClick={startEditingThread}>
-                    Edit
-                  </OneShotButton>
+                  <>
+                    <OneShotButton type="button" className="terciary" onClick={startEditingThread}>
+                      Edit
+                    </OneShotButton>
+                    {thread.comments.every((c) => c.author_user_id === thread.author_user_id) && (
+                      <OneShotButton type="button" className="terciary" onClick={deleteThreadAction}>
+                        Delete
+                      </OneShotButton>
+                    )}
+                  </>
                 )}
               </div>
             </div>

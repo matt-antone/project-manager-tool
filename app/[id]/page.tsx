@@ -312,6 +312,11 @@ function ProjectPageContent({ projectId, initial }: { projectId: string; initial
   }, [project]);
 
   useEffect(() => {
+    const title = project?.display_name?.trim() || project?.name?.trim();
+    if (title) document.title = title;
+  }, [project?.display_name, project?.name]);
+
+  useEffect(() => {
     setArchivedHoursInputs(
       Object.fromEntries(userHours.map((entry) => [entry.userId, formatHoursInput(entry.hours)]))
     );
@@ -1422,7 +1427,7 @@ async function loadProjectData(accessToken: string, projectId: string) {
     authedJsonFetch({ accessToken, path: `/projects/${projectId}` }),
     authedJsonFetch({ accessToken, path: `/projects/${projectId}/threads` }),
     authedJsonFetch({ accessToken, path: `/projects/${projectId}/files` }),
-    authedJsonFetch({ accessToken, path: "/clients" }),
+    authedJsonFetch({ accessToken, path: "/api/clients" }),
     authedJsonFetch({ accessToken, path: "/profile" }),
     authedJsonFetch({ accessToken, path: `/projects/${projectId}/expense-lines` })
   ]);

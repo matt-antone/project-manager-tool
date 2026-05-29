@@ -7,8 +7,8 @@ function redirectHome(request: NextRequest) {
   return response;
 }
 
-export async function GET() {
-  return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
+export async function GET(request: NextRequest) {
+  return redirectHome(request);
 }
 
 export async function POST(request: NextRequest) {

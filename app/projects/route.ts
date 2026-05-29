@@ -1,5 +1,6 @@
 import { requireUser } from "@/lib/auth";
 import { badRequest, conflict, serverError, unauthorized, ok } from "@/lib/http";
+import { sendMail } from "@/lib/mailer";
 import { assertClientNotArchivedForMutation, createProject, deleteProjectById, listProjects, setProjectStorageDir } from "@/lib/repositories";
 import { buildDropboxProjectFolderBaseName, clientCodeFromProjectCode } from "@/lib/project-storage";
 import { DropboxStorageAdapter, getDropboxErrorSummary, isTeamSelectUserRequiredError } from "@/lib/storage/dropbox-adapter";
@@ -7,13 +8,26 @@ import { z } from "zod";
 
 const CLIENT_MUTATION_BLOCK_PATTERN = /client is archived|client archive is in progress/i;
 
+// Escape user-controlled text before interpolating into email HTML.
+const escapeHtml = (s: string) =>
+  s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+
+// Strip CR/LF to prevent header injection in the subject line.
+const stripNewlines = (s: string) => s.replace(/[\r\n]+/g, " ").trim();
+
 const createProjectSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
   clientId: z.string().uuid(),
   tags: z.array(z.string().min(1)).max(50).optional(),
   deadline: z.string().date().optional().nullable(),
-  requestor: z.string().optional().nullable()
+  requestor: z.string().optional().nullable(),
+  memberIds: z.array(z.string().min(1)).max(200).optional()
 });
 
 export async function GET(request: Request) {
@@ -73,14 +87,20 @@ export async function POST(request: Request) {
       archived: "Client is archived. Restore it before creating new work.",
       inProgress: "Client archive is in progress. New project creation is temporarily disabled."
     });
-    const createdProject = await createProject({
+    // Note on the legacy-creator edge case: if the authenticated user's
+    // profile is legacy / missing email, createProject still inserts them
+    // into project_members (preserves the historical invariant from the
+    // prior post-insert addProjectMember calls), but they are excluded from
+    // addedMemberEmails and NOT surfaced in skippedInactiveUserIds.
+    const { project: createdProject, skippedInactiveUserIds, addedMemberEmails } = await createProject({
       name: payload.name,
       description: payload.description,
       createdBy: user.id,
       clientId: payload.clientId,
       tags: payload.tags,
       deadline: payload.deadline,
-      requestor: payload.requestor
+      requestor: payload.requestor,
+      memberIds: payload.memberIds
     });
 
     const adapter = new DropboxStorageAdapter();
@@ -92,7 +112,37 @@ export async function POST(request: Request) {
         projectFolderBaseName
       });
       const project = await setProjectStorageDir(createdProject.id, provisioned.projectDir);
-      return ok({ project: project ?? createdProject }, 201);
+
+      // Emails dispatch AFTER Dropbox provisioning succeeds. If Dropbox
+      // failed, control flow takes the catch branch below which invokes
+      // deleteProjectById (FK cascade clears project_members) — we never
+      // notify users about a rolled-back project. Single-attempt, no
+      // retry, no idempotency key.
+      if (addedMemberEmails.length > 0) {
+        const projectName = createdProject.name;
+        const safeSubjectName = stripNewlines(projectName);
+        const safeHtmlName = escapeHtml(projectName);
+        const sends = addedMemberEmails.map((email) =>
+          sendMail({
+            recipients: [{ email }],
+            subject: `You've been added to ${safeSubjectName}`,
+            text: `You're now a member of the project "${projectName}".`,
+            html: `<p>You're now a member of the project <strong>${safeHtmlName}</strong>.</p>`
+          }).catch((err) => {
+            console.error("project_member_notify_failed", {
+              projectId: createdProject.id,
+              email,
+              error: err instanceof Error ? err.message : String(err)
+            });
+          })
+        );
+        await Promise.allSettled(sends);
+      }
+
+      return ok({
+        project: project ?? createdProject,
+        ...(skippedInactiveUserIds.length > 0 ? { warnings: { skippedInactiveUserIds } } : {})
+      }, 201);
     } catch (error) {
       const dropboxSummary = getDropboxErrorSummary(error);
 

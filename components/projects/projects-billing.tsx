@@ -6,9 +6,12 @@ import { BillingProjectRow, type BillingProjectItem } from "@/components/project
 import { useProjectsWorkspace } from "@/components/projects/projects-workspace-context";
 import { ProjectsWorkspaceShell } from "@/components/projects/projects-workspace-shell";
 import { authedJsonFetch } from "@/lib/browser-auth";
+import type { ProjectUserHours } from "@/lib/repositories";
+
+type BillingRow = BillingProjectItem & { user_hours_breakdown?: ProjectUserHours[] | null };
 
 type BillingResult = {
-  projects: BillingProjectItem[];
+  projects: BillingRow[];
 };
 
 export function ProjectsBilling() {

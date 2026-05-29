@@ -53,6 +53,7 @@ function IconEye() {
 export default function SiteHeader() {
   const pathname = usePathname();
   const projectsNavActive = projectsNavHighlight(pathname);
+  const clientsNavActive = pathname?.startsWith("/clients") ?? false;
 
   const [theme, setTheme] = useState<Theme>("light");
   const [user, setUser] = useState<SessionUser | null>(null);
@@ -245,6 +246,14 @@ export default function SiteHeader() {
               scroll={false}
             >
               Project Board
+            </Link>
+            <Link
+              href="/clients"
+              prefetch={false}
+              className={`themeTopBarProjectsLink ${clientsNavActive ? "themeTopBarProjectsLinkActive" : ""}`}
+              scroll={false}
+            >
+              Clients
             </Link>
             <Link
               href="/billing"

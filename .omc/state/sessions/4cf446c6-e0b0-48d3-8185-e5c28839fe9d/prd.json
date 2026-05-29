@@ -1,0 +1,112 @@
+{
+  "version": 1,
+  "task": "Implement member selection at project creation (plan: .omc/plans/ralplan-when-adding-new-project-user.md)",
+  "stories": [
+    {
+      "id": "US-001",
+      "title": "Add withTransaction helper to lib/db.ts",
+      "priority": 1,
+      "passes": true,
+      "acceptanceCriteria": [
+        "lib/db.ts exports an async function withTransaction<T>(fn: (client: PoolClient) => Promise<T>): Promise<T>",
+        "Implementation uses getPool().connect(), issues BEGIN before fn, COMMIT after success, ROLLBACK on any throw, and releases the client in a finally block",
+        "lib/db.ts re-exports PoolClient from 'pg' for typing",
+        "TSDoc on the export warns: helpers using the module-level query() do not participate in the transaction; lists createProject as the current legitimate caller",
+        "pnpm tsc --noEmit returns 0 errors related to lib/db.ts"
+      ]
+    },
+    {
+      "id": "US-002",
+      "title": "Add hasProjectsDeadlineColumn probe + bulkInsertProjectMembers helper",
+      "priority": 2,
+      "passes": true,
+      "acceptanceCriteria": [
+        "lib/repositories.ts defines a module-level cached helper hasProjectsDeadlineColumn(): Promise<boolean> that queries information_schema.columns exactly once per process and memoizes the result",
+        "A code comment above the cache variable warns that schema migrations require a process restart and to not add hot-reload",
+        "lib/repositories.ts exports bulkInsertProjectMembers(client: PoolClient, projectId: string, userIds: string[]): Promise<void>",
+        "bulkInsertProjectMembers is a no-op when userIds.length === 0",
+        "bulkInsertProjectMembers uses SQL: insert into project_members (project_id, user_id) select $1, unnest($2::text[]) on conflict (project_id, user_id) do nothing",
+        "pnpm tsc --noEmit returns 0 errors related to lib/repositories.ts changes from this story"
+      ]
+    },
+    {
+      "id": "US-003",
+      "title": "Refactor createProject() to atomic transactional flow",
+      "priority": 3,
+      "passes": true,
+      "acceptanceCriteria": [
+        "createProject() in lib/repositories.ts accepts memberIds?: string[] in its args type",
+        "createProject() calls hasProjectsDeadlineColumn() before opening the transaction and picks the with-deadline or legacy INSERT variant based on the result",
+        "createProject() wraps the project insert + active-user filter SELECT + bulkInsertProjectMembers call in a single withTransaction(async (client) => ...) block; no try/catch column-missing fallback remains inside the transaction",
+        "Inside the transaction, memberIds is filtered to active users via select id, email from user_profiles where id = any($1::text[]) and is_legacy = false and email is not null using the transaction client",
+        "Creator (args.createdBy) is always present in the bulk insert set regardless of active-status filter result, preserving the historical invariant from lines 825 and 866",
+        "Both previous post-insert addProjectMember(created.id, args.createdBy) calls are removed",
+        "createProject() returns { project, skippedInactiveUserIds: string[], addedMemberEmails: string[] }",
+        "addedMemberEmails excludes the creator even if creator is active",
+        "skippedInactiveUserIds does not include args.createdBy"
+      ]
+    },
+    {
+      "id": "US-004",
+      "title": "Extend createProjectSchema and POST handler",
+      "priority": 4,
+      "passes": true,
+      "acceptanceCriteria": [
+        "createProjectSchema in app/projects/route.ts:10 includes memberIds: z.array(z.string().min(1)).max(200).optional()",
+        "POST handler destructures the new createProject return shape: { project: createdProject, skippedInactiveUserIds, addedMemberEmails }",
+        "POST handler dispatches emails via sendMail() AFTER setProjectStorageDir succeeds, NOT before; the existing Dropbox compensating deleteProjectById path is unchanged",
+        "Email dispatch is gated on config.emailEnabled() and uses Promise.allSettled over addedMemberEmails; each send is wrapped in .catch() that logs project_member_notify_failed with { projectId, email, error }",
+        "POST response shape is { project, warnings?: { skippedInactiveUserIds } }; warnings field is omitted when skippedInactiveUserIds is empty",
+        "A code comment in the handler documents the legacy-creator-skip edge case (creator inserted but absent from addedMemberEmails, absent from skippedInactiveUserIds)"
+      ]
+    },
+    {
+      "id": "US-005",
+      "title": "Wire member picker into create dialog UI",
+      "priority": 5,
+      "passes": true,
+      "acceptanceCriteria": [
+        "components/projects/projects-workspace-shell.tsx passes members, activeUsers, currentUserId, onAddMember, onRemoveMember props to ProjectDialogForm when opening the create dialog",
+        "activeUsers data is fetched and available in the create dialog (reuse existing fetch if one exists, otherwise add one)",
+        "components/projects/projects-workspace-context.tsx tracks memberIds: string[] in create-form state, exposes onAddMember/onRemoveMember handlers, and includes memberIds in the POST /api/projects submit payload",
+        "components/project-dialog-form.tsx accepts a currentUserId?: string prop",
+        "When rendering the member checkbox list, the row for currentUserId renders with both checked and disabled attributes; its onChange handler is a no-op",
+        "Submitting the form with the creator's checkbox does not include the creator's id in the submitted memberIds array (the server adds creator regardless)"
+      ]
+    },
+    {
+      "id": "US-006",
+      "title": "Client-side warnings toast for skipped inactive users",
+      "priority": 6,
+      "passes": true,
+      "acceptanceCriteria": [
+        "On successful create response containing warnings.skippedInactiveUserIds, the client resolves user names from the in-memory activeUsers list",
+        "A toast or inline message displays: 'Skipped: {names} — no longer active'",
+        "When response has no warnings field, no toast is shown"
+      ]
+    },
+    {
+      "id": "US-007",
+      "title": "Caller audit + project-wide checks",
+      "priority": 7,
+      "passes": true,
+      "acceptanceCriteria": [
+        "rg -n 'createProject\\(' --type ts confirms app/projects/route.ts is the only direct caller of createProject; if other callers exist, they are updated to destructure the new return shape",
+        "pnpm tsc --noEmit returns 0 errors across the whole repo",
+        "pnpm lint returns 0 new errors (existing baseline preserved)"
+      ]
+    },
+    {
+      "id": "US-008",
+      "title": "Tests for new flow",
+      "priority": 8,
+      "passes": true,
+      "acceptanceCriteria": [
+        "A unit test exists asserting that bulkInsertProjectMembers is a no-op for [] (does not call client.query)",
+        "A unit test or integration test exists asserting createProject returns the new shape { project, skippedInactiveUserIds, addedMemberEmails }",
+        "A test verifies the route POST /api/projects accepts memberIds and returns warnings only when skipping occurred",
+        "pnpm test (or the project's existing test command) passes 100% (no new failures beyond preexisting baseline)"
+      ]
+    }
+  ]
+}

@@ -28,7 +28,7 @@ describe("PATCH /clients/[id]", () => {
       created_at: "2024-01-01T00:00:00.000Z"
     });
 
-    const { PATCH } = await import("@/app/clients/[id]/route");
+    const { PATCH } = await import("@/app/api/clients/[id]/route");
     const response = await PATCH(
       new Request("http://localhost/clients/client-uuid", {
         method: "PATCH",
@@ -65,7 +65,7 @@ describe("PATCH /clients/[id]", () => {
     requireUserMock.mockResolvedValue({ id: "user-1", email: "person@example.com" });
     updateClientMock.mockResolvedValue(null);
 
-    const { PATCH } = await import("@/app/clients/[id]/route");
+    const { PATCH } = await import("@/app/api/clients/[id]/route");
     const response = await PATCH(
       new Request("http://localhost/clients/missing", {
         method: "PATCH",
@@ -84,7 +84,7 @@ describe("PATCH /clients/[id]", () => {
   it("returns 400 for empty name", async () => {
     requireUserMock.mockResolvedValue({ id: "user-1", email: "person@example.com" });
 
-    const { PATCH } = await import("@/app/clients/[id]/route");
+    const { PATCH } = await import("@/app/api/clients/[id]/route");
     const response = await PATCH(
       new Request("http://localhost/clients/client-uuid", {
         method: "PATCH",
@@ -104,7 +104,7 @@ describe("PATCH /clients/[id]", () => {
   it("returns 400 for invalid github_repos payload", async () => {
     requireUserMock.mockResolvedValue({ id: "user-1", email: "person@example.com" });
 
-    const { PATCH } = await import("@/app/clients/[id]/route");
+    const { PATCH } = await import("@/app/api/clients/[id]/route");
     const response = await PATCH(
       new Request("http://localhost/clients/client-uuid", {
         method: "PATCH",
@@ -124,7 +124,7 @@ describe("PATCH /clients/[id]", () => {
   it("returns 400 for malformed JSON payload", async () => {
     requireUserMock.mockResolvedValue({ id: "user-1", email: "person@example.com" });
 
-    const { PATCH } = await import("@/app/clients/[id]/route");
+    const { PATCH } = await import("@/app/api/clients/[id]/route");
     const response = await PATCH(
       new Request("http://localhost/clients/client-uuid", {
         method: "PATCH",
@@ -147,7 +147,7 @@ describe("PATCH /clients/[id]", () => {
     requireUserMock.mockResolvedValue({ id: "user-1", email: "person@example.com" });
     updateClientMock.mockRejectedValue(new Error("db failed"));
 
-    const { PATCH } = await import("@/app/clients/[id]/route");
+    const { PATCH } = await import("@/app/api/clients/[id]/route");
     const response = await PATCH(
       new Request("http://localhost/clients/client-uuid", {
         method: "PATCH",

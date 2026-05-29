@@ -79,7 +79,7 @@ describe("client archive routes", () => {
     });
     rewriteClientDropboxPathsMock.mockResolvedValue(undefined);
 
-    const { POST } = await import("@/app/clients/[id]/archive/route");
+    const { POST } = await import("@/app/api/clients/[id]/archive/route");
     const response = await POST(
       new Request("http://localhost/clients/11111111-1111-1111-8111-111111111111/archive", {
         method: "POST",
@@ -92,7 +92,7 @@ describe("client archive routes", () => {
 
     expect(response.status).toBe(202);
     await expect(response.json()).resolves.toMatchObject({
-      pollUrl: "/clients/11111111-1111-1111-8111-111111111111"
+      pollUrl: "/api/clients/11111111-1111-1111-8111-111111111111"
     });
     expect(updateClientArchiveStateMock).toHaveBeenCalledWith("11111111-1111-1111-8111-111111111111", {
       status: "pending",
@@ -133,7 +133,7 @@ describe("client archive routes", () => {
       archive_error: null
     });
 
-    const { POST } = await import("@/app/clients/[id]/archive/route");
+    const { POST } = await import("@/app/api/clients/[id]/archive/route");
     const response = await POST(
       new Request("http://localhost/clients/11111111-1111-1111-8111-111111111111/archive", {
         method: "POST",

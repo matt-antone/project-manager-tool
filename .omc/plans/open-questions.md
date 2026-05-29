@@ -1,0 +1,5 @@
+# Open Questions
+
+## billing-hours-table-consensus - 2026-05-21
+- [x] Does an existing `formatHours` helper exist (e.g. in `lib/project-utils.ts`) or does `BillingProjectRow` inline its `total_hours` rendering? — **RESOLVED (iteration 2)**: No shared helper exists in `lib/` or `components/` (grep verified). `lib/project-utils.ts:24` defines a private `coerceHoursTotal` used only by `hasMissingHours`. Additionally, `components/projects/billing-project-row.tsx` does not currently render `total_hours` at all — only the `Missing hours` badge consults it via `hasMissingHours`. Decision: introduce a file-local `formatHours = (v) => Number(v).toFixed(2)` in `billing-project-row.tsx` and use it for both row cells and the Total row. Total cell uses `formatHours(project.total_hours)` (not a JS sum) to preserve the SQL invariant. See `billing-hours-table-consensus.md` Step 4.4.
+- [ ] Should `ProjectUserHours` be promoted to `lib/types/project-user-hours.ts` now, or kept in-place in `lib/repositories.ts`? — Affects import surface for any future non-billing consumer. Default (recorded in ADR Follow-ups): keep in-place + export.

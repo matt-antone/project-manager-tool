@@ -1,10 +1,11 @@
 import slugify from "slugify";
 import { config } from "./config-core";
-import { query } from "./db";
+import { query, withTransaction, type PoolClient } from "./db";
 import { renderMarkdown } from "./markdown";
 import { DEFAULT_HOURLY_RATE_USD, MAX_EXPENSE_LINE_AMOUNT_USD, MAX_SITE_HOURLY_RATE_USD } from "./project-financials";
 import type { ProjectStatus } from "./project-status";
 import type { ClientRecord } from "./types/client-record";
+import type { ClientWithStats, ClientTabCounts, ClientDetailStats, ClientProjectRow } from "./types/client-stats";
 
 export type UserProfile = {
   id: string;
@@ -27,7 +28,7 @@ type SiteSettings = {
 
 type ClientArchiveStatus = "idle" | "pending" | "in_progress" | "completed" | "failed";
 
-type ProjectUserHours = {
+export type ProjectUserHours = {
   userId: string;
   firstName: string | null;
   lastName: string | null;
@@ -309,6 +310,93 @@ export async function updateClient(
   return (result.rows[0] as ClientRecord | undefined) ?? null;
 }
 
+export async function listClientsWithStats(
+  filter: "active" | "archived"
+): Promise<ClientWithStats[]> {
+  const archivedClause =
+    filter === "archived" ? "c.archived_at is not null" : "c.archived_at is null";
+
+  const result = await query(
+    `select
+       c.id, c.name, c.code, c.github_repos, c.domains, c.created_at, c.archived_at,
+       count(p.id) filter (where p.archived = false) as active_project_count,
+       max(p.last_activity_at) filter (where p.archived = false) as last_activity_at
+     from clients c
+     left join projects p on p.client_id = c.id
+     where ${archivedClause}
+     group by c.id
+     order by c.name asc`
+  );
+
+  return result.rows.map((row: Record<string, unknown>) => ({
+    ...(row as unknown as ClientRecord),
+    active_project_count: Number(row.active_project_count ?? 0),
+    last_activity_at: (row.last_activity_at as string | null) ?? null
+  }));
+}
+
+export async function getClientWithStats(
+  id: string
+): Promise<{ client: ClientRecord; stats: ClientDetailStats } | null> {
+  const result = await query(
+    `select
+       c.id, c.name, c.code, c.github_repos, c.domains, c.created_at, c.archived_at,
+       count(p.id) filter (where p.archived = false) as active_project_count,
+       count(p.id) filter (where p.archived = true)  as archived_project_count,
+       max(p.last_activity_at) filter (where p.archived = false) as last_activity_at
+     from clients c
+     left join projects p on p.client_id = c.id
+     where c.id = $1
+     group by c.id`,
+    [id]
+  );
+
+  const row = result.rows[0] as Record<string, unknown> | undefined;
+  if (!row) return null;
+
+  const {
+    active_project_count,
+    archived_project_count,
+    last_activity_at,
+    ...client
+  } = row;
+
+  return {
+    client: client as unknown as ClientRecord,
+    stats: {
+      activeProjectCount: Number(active_project_count ?? 0),
+      archivedProjectCount: Number(archived_project_count ?? 0),
+      lastActivityAt: (last_activity_at as string | null) ?? null
+    }
+  };
+}
+
+export async function listClientProjects(
+  clientId: string,
+  filter: "active" | "archived"
+): Promise<ClientProjectRow[]> {
+  const result = await query(
+    `select id, name, status, last_activity_at, deadline, created_at
+     from projects
+     where client_id = $1
+       and archived = $2
+     order by name asc`,
+    [clientId, filter === "archived"]
+  );
+  return result.rows as ClientProjectRow[];
+}
+
+export async function getClientTabCounts(): Promise<ClientTabCounts> {
+  const result = await query(
+    `select
+       count(*) filter (where archived_at is null) as active,
+       count(*) filter (where archived_at is not null) as archived
+     from clients`
+  );
+  const row = result.rows[0] ?? { active: 0, archived: 0 };
+  return { active: Number(row.active ?? 0), archived: Number(row.archived ?? 0) };
+}
+
 /** Same CASE as `display_name` — use for ORDER BY title / tie-breaks. */
 const projectDisplayNameOrderExpr = `case
            when p.project_code is not null and length(trim(p.project_code)) > 0 then p.project_code || '-' || p.name
@@ -326,6 +414,57 @@ const projectListSelectColumns = `p.*, c.name as client_name, c.code as client_c
            (select sum(puh.hours) from project_user_hours puh where puh.project_id = p.id),
            0
          )::numeric as total_hours`;
+
+// billing-only: correlated JSON aggregate ordered by spec (last_name, first_name, email).
+// Capped at 200 rows per project. Inner ORDER BY + LIMIT bounds the row set;
+// outer json_agg ORDER BY restates the same sort to be planner-proof.
+const billingUserHoursBreakdownExpr = `
+  coalesce((
+    select json_agg(
+      row
+      order by row."lastName", row."firstName", row."email", row."userId"
+    )
+    from (
+      select
+        puh.user_id                          as "userId",
+        up.first_name                        as "firstName",
+        up.last_name                         as "lastName",
+        up.email                             as "email",
+        up.avatar_url                        as "avatarUrl",
+        puh.hours                            as "hours",
+        lower(coalesce(up.last_name, ''))    as "lastNameKey",
+        lower(coalesce(up.first_name, ''))   as "firstNameKey",
+        lower(up.email)                      as "emailKey"
+      from project_user_hours puh
+      left join user_profiles up on up.id = puh.user_id
+      where puh.project_id = p.id
+      order by "lastNameKey", "firstNameKey", "emailKey", puh.user_id
+      limit 200
+    ) row
+  ), '[]'::json) as user_hours_breakdown
+`;
+
+const billingSelectColumns = projectListSelectColumns + ", " + billingUserHoursBreakdownExpr;
+
+export type ProjectListRow = {
+  id: string;
+  name: string;
+  project_code: string | null;
+  status: string;
+  archived: boolean;
+  client_id: string | null;
+  client_name: string | null;
+  client_code: string | null;
+  display_name: string;
+  discussion_count: number;
+  file_count: number;
+  total_hours: string;
+  [key: string]: unknown;
+};
+
+export type BillingProjectWithBreakdown = ProjectListRow & {
+  user_hours_breakdown: ProjectUserHours[];
+};
 
 type ListProjectsOptions = {
   clientId?: string | null;
@@ -444,15 +583,31 @@ export async function listProjects(includeArchived = true, options?: ListProject
         : `p.created_at desc`;
 
   if (billingOnly) {
-    const sql = `select ${projectListSelectColumns}
+    // Billing list is always sorted alphabetically by project display name.
+    const billingOrderBy = `lower(${projectDisplayNameOrderExpr}) asc`;
+    const sql = `select ${billingSelectColumns}
        from projects p
        left join clients c on c.id = p.client_id
        where p.archived = false
          and p.status = 'billing'
          and ($1::uuid is null or p.client_id = $1::uuid)
-       order by ${orderBy}`;
-    const result = await query(sql, [clientId]);
-    return result.rows;
+       order by ${billingOrderBy}`;
+    try {
+      const result = await query(sql, [clientId]);
+      return result.rows as BillingProjectWithBreakdown[];
+    } catch (err) {
+      if (!isMissingProjectUserHoursTableError(err)) throw err;
+      // project_user_hours table not yet migrated — fall back without aggregate
+      const fallbackSql = `select ${projectListSelectColumns}, '[]'::json as user_hours_breakdown
+         from projects p
+         left join clients c on c.id = p.client_id
+         where p.archived = false
+           and p.status = 'billing'
+           and ($1::uuid is null or p.client_id = $1::uuid)
+         order by ${billingOrderBy}`;
+      const result = await query(fallbackSql, [clientId]);
+      return result.rows as BillingProjectWithBreakdown[];
+    }
   }
 
   const sql = includeArchived
@@ -589,6 +744,38 @@ function normalizeProjectTags(tags?: string[]) {
   );
 }
 
+// Process-local cache for the `projects.deadline` column existence check.
+// A schema migration that adds or removes the column requires a process
+// restart to refresh this value. Do not add hot-reload — column shape is
+// stable across the lifetime of a single Next.js server process.
+let cachedHasProjectsDeadlineColumn: boolean | null = null;
+export function resetProjectsDeadlineCacheForTests(): void {
+  cachedHasProjectsDeadlineColumn = null;
+}
+async function hasProjectsDeadlineColumn(): Promise<boolean> {
+  if (cachedHasProjectsDeadlineColumn !== null) {
+    return cachedHasProjectsDeadlineColumn;
+  }
+  const r = await query<{ exists: boolean }>(
+    `select exists (
+       select 1 from information_schema.columns
+       where table_name = 'projects' and column_name = 'deadline'
+     ) as exists`
+  );
+  cachedHasProjectsDeadlineColumn = r.rows[0]?.exists === true;
+  return cachedHasProjectsDeadlineColumn;
+}
+
+export type CreatedProjectRow = {
+  id: string;
+  name: string;
+  project_code: string;
+  project_slug: string;
+  storage_project_dir?: string | null;
+  client_code?: string | null;
+  [key: string]: unknown;
+};
+
 export async function createProject(args: {
   name: string;
   description?: string;
@@ -597,7 +784,12 @@ export async function createProject(args: {
   tags?: string[];
   deadline?: string | null;
   requestor?: string | null;
-}) {
+  memberIds?: string[];
+}): Promise<{
+  project: CreatedProjectRow;
+  skippedInactiveUserIds: string[];
+  addedMemberEmails: string[];
+}> {
   const projectTitle = args.name.trim();
   if (!projectTitle) {
     throw new Error("Project name is required");
@@ -606,23 +798,23 @@ export async function createProject(args: {
     throw new Error("Client is required");
   }
 
-  const client = await getClientById(args.clientId);
-  if (!client) {
+  const projectClient = await getClientById(args.clientId);
+  if (!projectClient) {
     throw new Error("Selected client not found");
   }
 
-  const clientSlug = slugify(client.name, { strict: true }) || slugify(client.code, { strict: true }) || "client";
+  const clientSlug = slugify(projectClient.name, { strict: true }) || slugify(projectClient.code, { strict: true }) || "client";
   const projectSlug = slugify(projectTitle, { lower: true, strict: true }) || "project";
   const normalizedTags = normalizeProjectTags(args.tags);
   const deadline = typeof args.deadline === "string" ? args.deadline.trim() || null : null;
   const requestor = typeof args.requestor === "string" ? args.requestor.trim() || null : null;
   const projectsRoot = config.dropboxProjectsRootFolder();
-  const values = [
+  const valuesWithDeadline = [
     projectTitle,
     args.description ?? null,
     args.createdBy,
     args.clientId,
-    client.code,
+    projectClient.code,
     clientSlug,
     projectSlug,
     normalizedTags,
@@ -630,87 +822,102 @@ export async function createProject(args: {
     deadline,
     requestor
   ];
+  const valuesLegacy = [...valuesWithDeadline.slice(0, 9), requestor];
 
-  try {
-    const result = await query(
-      `with lock as (
-         select pg_advisory_xact_lock(hashtext('project-seq:' || $4::uuid::text))
-       ),
-       next_seq as (
-         select coalesce(max(project_seq), 0) + 1 as seq
-         from projects
-         where client_id = $4::uuid
-           and exists(select 1 from lock)
-       )
-       insert into projects (
-         name, slug, description, created_by, client_id, status, project_seq, project_code, client_slug, project_slug, tags, storage_project_dir, deadline, requestor
-       )
-       select
-         $1,
-         lower($5 || '-' || lpad(next_seq.seq::text, 4, '0') || '-' || $7),
-         $2,
-         $3,
-         $4::uuid,
-         'new',
-         next_seq.seq,
-         $5 || '-' || lpad(next_seq.seq::text, 4, '0'),
-         $6,
-         $7,
-         $8::text[],
-         $9 || '/' || upper(trim($5)) || '/' || upper(trim($5) || '-' || lpad(next_seq.seq::text, 4, '0')) || '-' || coalesce(nullif(trim(regexp_replace(regexp_replace(trim($1), '[\\/:*?"<>|]', '', 'g'), '[[:space:]]+', ' ', 'g')), ''), 'project'),
-         $10::date,
-         $11
-       from next_seq
-       returning *`,
-      values
-    );
-    const created = result.rows[0];
-    // Non-atomic: project row is committed before this insert.
-    // If this throws, the project exists without the creator in project_members.
-    await addProjectMember(created.id, args.createdBy);
-    return created;
-  } catch (error) {
-    if (!isMissingProjectDeadlineColumnError(error)) {
-      throw error;
-    }
+  const insertWithDeadlineSql = `with lock as (
+       select pg_advisory_xact_lock(hashtext('project-seq:' || $4::uuid::text))
+     ),
+     next_seq as (
+       select coalesce(max(project_seq), 0) + 1 as seq
+       from projects
+       where client_id = $4::uuid
+         and exists(select 1 from lock)
+     )
+     insert into projects (
+       name, slug, description, created_by, client_id, status, project_seq, project_code, client_slug, project_slug, tags, storage_project_dir, deadline, requestor
+     )
+     select
+       $1,
+       lower($5 || '-' || lpad(next_seq.seq::text, 4, '0') || '-' || $7),
+       $2,
+       $3,
+       $4::uuid,
+       'new',
+       next_seq.seq,
+       $5 || '-' || lpad(next_seq.seq::text, 4, '0'),
+       $6,
+       $7,
+       $8::text[],
+       $9 || '/' || upper(trim($5)) || '/' || upper(trim($5) || '-' || lpad(next_seq.seq::text, 4, '0')) || '-' || coalesce(nullif(trim(regexp_replace(regexp_replace(trim($1), '[\\/:*?"<>|]', '', 'g'), '[[:space:]]+', ' ', 'g')), ''), 'project'),
+       $10::date,
+       $11
+     from next_seq
+     returning *`;
 
-    const fallback = await query(
-      `with lock as (
-         select pg_advisory_xact_lock(hashtext('project-seq:' || $4::uuid::text))
-       ),
-       next_seq as (
-         select coalesce(max(project_seq), 0) + 1 as seq
-         from projects
-         where client_id = $4::uuid
-           and exists(select 1 from lock)
-       )
-       insert into projects (
-         name, slug, description, created_by, client_id, status, project_seq, project_code, client_slug, project_slug, tags, storage_project_dir, requestor
-       )
-       select
-         $1,
-         lower($5 || '-' || lpad(next_seq.seq::text, 4, '0') || '-' || $7),
-         $2,
-         $3,
-         $4::uuid,
-         'new',
-         next_seq.seq,
-         $5 || '-' || lpad(next_seq.seq::text, 4, '0'),
-         $6,
-         $7,
-         $8::text[],
-         $9 || '/' || upper(trim($5)) || '/' || upper(trim($5) || '-' || lpad(next_seq.seq::text, 4, '0')) || '-' || coalesce(nullif(trim(regexp_replace(regexp_replace(trim($1), '[\\/:*?"<>|]', '', 'g'), '[[:space:]]+', ' ', 'g')), ''), 'project'),
-         $10
-       from next_seq
-       returning *`,
-      [...values.slice(0, 9), requestor]
+  const insertLegacySql = `with lock as (
+       select pg_advisory_xact_lock(hashtext('project-seq:' || $4::uuid::text))
+     ),
+     next_seq as (
+       select coalesce(max(project_seq), 0) + 1 as seq
+       from projects
+       where client_id = $4::uuid
+         and exists(select 1 from lock)
+     )
+     insert into projects (
+       name, slug, description, created_by, client_id, status, project_seq, project_code, client_slug, project_slug, tags, storage_project_dir, requestor
+     )
+     select
+       $1,
+       lower($5 || '-' || lpad(next_seq.seq::text, 4, '0') || '-' || $7),
+       $2,
+       $3,
+       $4::uuid,
+       'new',
+       next_seq.seq,
+       $5 || '-' || lpad(next_seq.seq::text, 4, '0'),
+       $6,
+       $7,
+       $8::text[],
+       $9 || '/' || upper(trim($5)) || '/' || upper(trim($5) || '-' || lpad(next_seq.seq::text, 4, '0')) || '-' || coalesce(nullif(trim(regexp_replace(regexp_replace(trim($1), '[\\/:*?"<>|]', '', 'g'), '[[:space:]]+', ' ', 'g')), ''), 'project'),
+       $10
+     from next_seq
+     returning *`;
+
+  // Pre-TX schema probe. Avoids reissuing SQL on a Postgres-aborted
+  // transaction (would otherwise raise SQLSTATE 25P02).
+  const hasDeadline = await hasProjectsDeadlineColumn();
+  const insertSql = hasDeadline ? insertWithDeadlineSql : insertLegacySql;
+  const insertValues = hasDeadline ? valuesWithDeadline : valuesLegacy;
+
+  return withTransaction(async (client) => {
+    const insertResult = await client.query<CreatedProjectRow>(insertSql, insertValues);
+    const created = insertResult.rows[0];
+
+    // Filter requested members to active users only. Creator is always
+    // inserted regardless of active-status; if they happen to be legacy /
+    // missing-email, they're still added (preserves historical invariant
+    // from prior post-insert addProjectMember calls).
+    const requested = Array.from(new Set([args.createdBy, ...(args.memberIds ?? [])]));
+    const activeRows = await client.query<{ id: string; email: string }>(
+      `select id, email from user_profiles
+        where id = any($1::text[])
+          and is_legacy = false
+          and email is not null`,
+      [requested]
     );
-    const created = fallback.rows[0];
-    // Non-atomic: project row is committed before this insert.
-    // If this throws, the project exists without the creator in project_members.
-    await addProjectMember(created.id, args.createdBy);
-    return created;
-  }
+    const activeIds = new Set(activeRows.rows.map((r) => r.id));
+    const skippedInactiveUserIds = requested.filter(
+      (id) => !activeIds.has(id) && id !== args.createdBy
+    );
+    const toInsert = Array.from(new Set<string>([args.createdBy, ...activeIds]));
+    await bulkInsertProjectMembers(client, created.id, toInsert);
+
+    const addedMemberEmails = activeRows.rows
+      .filter((r) => r.id !== args.createdBy)
+      .map((r) => r.email);
+
+    return { project: created, skippedInactiveUserIds, addedMemberEmails };
+  });
 }
 
 export async function getProject(id: string, viewerUserId?: string | null) {
@@ -1236,7 +1443,7 @@ export async function setProjectUserHours(args: {
   return result.rows[0] ?? null;
 }
 
-function isMissingProjectUserHoursTableError(error: unknown) {
+export function isMissingProjectUserHoursTableError(error: unknown) {
   if (!(error instanceof Error)) {
     return false;
   }
@@ -1336,6 +1543,20 @@ export async function addProjectMember(projectId: string, userId: string) {
   await query(
     "insert into project_members (project_id, user_id) values ($1, $2) on conflict (project_id, user_id) do nothing",
     [projectId, userId]
+  );
+}
+
+export async function bulkInsertProjectMembers(
+  client: PoolClient,
+  projectId: string,
+  userIds: string[]
+): Promise<void> {
+  if (userIds.length === 0) return;
+  await client.query(
+    `insert into project_members (project_id, user_id)
+     select $1, unnest($2::text[])
+     on conflict (project_id, user_id) do nothing`,
+    [projectId, userIds]
   );
 }
 
@@ -1477,6 +1698,31 @@ export async function editThread(args: {
     [args.title, args.bodyMarkdown, bodyHtml, args.threadId, args.projectId]
   );
   return result.rows[0];
+}
+
+export async function countNonAuthorComments(args: {
+  projectId: string;
+  threadId: string;
+  authorUserId: string;
+}) {
+  const result = await query<{ c: string }>(
+    `select count(*)::int as c
+       from discussion_comments
+      where project_id = $1
+        and thread_id = $2
+        and author_user_id <> $3`,
+    [args.projectId, args.threadId, args.authorUserId]
+  );
+  const raw = result.rows[0]?.c;
+  return typeof raw === "number" ? raw : Number(raw ?? 0);
+}
+
+export async function deleteThread(args: { projectId: string; threadId: string }) {
+  await query(
+    `delete from discussion_threads where id = $1 and project_id = $2`,
+    [args.threadId, args.projectId]
+  );
+  await touchProjectActivity(args.projectId);
 }
 
 export async function getThread(projectId: string, threadId: string) {

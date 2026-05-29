@@ -42,12 +42,16 @@ describe("POST /projects", () => {
   it("rolls back and returns a clear error when Dropbox provisioning fails", async () => {
     requireUserMock.mockResolvedValue({ id: "user-1", email: "person@example.com" });
     createProjectMock.mockResolvedValue({
-      id: "project-1",
-      name: "Website Refresh",
-      project_code: "BRGS-0001",
-      project_slug: "website-refresh",
-      client_slug: "Bright-Ridge",
-      storage_project_dir: "/Projects/BRGS/BRGS-0001-Website Refresh"
+      project: {
+        id: "project-1",
+        name: "Website Refresh",
+        project_code: "BRGS-0001",
+        project_slug: "website-refresh",
+        client_slug: "Bright-Ridge",
+        storage_project_dir: "/Projects/BRGS/BRGS-0001-Website Refresh"
+      },
+      skippedInactiveUserIds: [],
+      addedMemberEmails: []
     });
     ensureProjectFoldersMock.mockRejectedValue(new Error("Dropbox offline"));
     deleteProjectByIdMock.mockResolvedValue(undefined);
@@ -78,12 +82,16 @@ describe("POST /projects", () => {
   it("passes requestor through when creating a project", async () => {
     requireUserMock.mockResolvedValue({ id: "user-1", email: "person@example.com" });
     createProjectMock.mockResolvedValue({
-      id: "project-1",
-      name: "Website Refresh",
-      project_code: "BRGS-0001",
-      project_slug: "website-refresh",
-      client_slug: "Bright-Ridge",
-      storage_project_dir: "/Projects/BRGS/BRGS-0001-Website Refresh"
+      project: {
+        id: "project-1",
+        name: "Website Refresh",
+        project_code: "BRGS-0001",
+        project_slug: "website-refresh",
+        client_slug: "Bright-Ridge",
+        storage_project_dir: "/Projects/BRGS/BRGS-0001-Website Refresh"
+      },
+      skippedInactiveUserIds: [],
+      addedMemberEmails: []
     });
     ensureProjectFoldersMock.mockResolvedValue({
       projectDir: "/Projects/BRGS/BRGS-0001-Website Refresh"

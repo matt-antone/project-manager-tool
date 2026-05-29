@@ -31,7 +31,7 @@ describe("POST /clients", () => {
       created_at: "2024-01-01T00:00:00.000Z"
     });
 
-    const { POST } = await import("@/app/clients/route");
+    const { POST } = await import("@/app/api/clients/route");
     const response = await POST(
       new Request("http://localhost/clients", {
         method: "POST",
@@ -76,7 +76,7 @@ describe("POST /clients", () => {
       created_at: "2024-01-01T00:00:00.000Z"
     });
 
-    const { POST } = await import("@/app/clients/route");
+    const { POST } = await import("@/app/api/clients/route");
     const response = await POST(
       new Request("http://localhost/clients", {
         method: "POST",
@@ -100,7 +100,7 @@ describe("POST /clients", () => {
   it("returns 400 for invalid domains payload", async () => {
     requireUserMock.mockResolvedValue({ id: "user-1", email: "person@example.com" });
 
-    const { POST } = await import("@/app/clients/route");
+    const { POST } = await import("@/app/api/clients/route");
     const response = await POST(
       new Request("http://localhost/clients", {
         method: "POST",

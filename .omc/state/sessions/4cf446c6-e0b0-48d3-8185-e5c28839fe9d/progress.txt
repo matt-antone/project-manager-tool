@@ -1,0 +1,43 @@
+Ralph session — implementing .omc/plans/ralplan-when-adding-new-project-user.md (v2.1)
+
+Spec: .omc/specs/deep-dive-when-adding-new-project-user.md
+Trace: .omc/specs/deep-dive-trace-when-adding-new-project-user.md
+
+Key repo facts:
+- lib/db.ts has Pool getter + single-shot query(); no withTransaction yet
+- lib/repositories.ts:747 createProject(); :825 and :866 both call addProjectMember(created.id, args.createdBy) post-insert non-atomically
+- lib/repositories.ts:1490 addProjectMember(projectId, userId) uses ON CONFLICT (project_id, user_id) DO NOTHING
+- lib/repositories.ts:78 listActiveUsers() = is_legacy=false AND email IS NOT NULL
+- app/projects/route.ts:10 createProjectSchema (Zod); :68 POST; :~99 Dropbox try/catch with compensating deleteProjectById
+- lib/mailer.ts:150 sendMail() via Mailgun; config.emailEnabled() gate
+- supabase/migrations/0026_project_members.sql:3 FK with ON DELETE CASCADE (verified)
+- components/projects/projects-workspace-shell.tsx — opens create dialog without member-picker props
+- components/projects/projects-workspace-context.tsx ~line 310 — create form state
+- components/project-dialog-form.tsx — checkbox list scaffold exists, gated on showMembers prop bundle
+
+Iteration 1 done:
+- US-001 lib/db.ts withTransaction + PoolClient re-export + TSDoc warning
+- US-002 hasProjectsDeadlineColumn cached probe + bulkInsertProjectMembers helper
+- US-003 createProject refactored: pre-TX probe, atomic TX with bulk member insert, returns { project, skippedInactiveUserIds, addedMemberEmails }
+- US-004 route.ts: memberIds in schema, destructure new shape, sendMail loop AFTER setProjectStorageDir success, warnings in response
+- US-005 UI: workspace-context tracks activeUsers (lazy fetch on dialog open) + selectedMemberIds + addMember/removeMember; shell passes new props to ProjectDialogForm; form locks creator row checked+disabled
+- US-006 client-side warnings: setStatus message lists skipped users by name
+- US-007 caller audit: only direct callers route.ts + lib/imports/basecamp2-import.ts (updated) + tests (rewritten)
+- US-008 tests/unit/create-project.test.ts rewritten for new flow; also added test for bulkInsertProjectMembers no-op on []
+- Fixed hero test fixture: added userId/activeUsers/selectedMemberIds/addMember/removeMember
+- ESLint clean (was failing on `any` in return type — switched to CreatedProjectRow)
+
+Tests run #2 in background after fixture patch.
+
+Iteration 2 (test fixes):
+- Mock createProject return shape updated in projects-route.test.ts (2 calls) and import-idempotency.test.ts
+- Added resetProjectsDeadlineCacheForTests() export; called in beforeEach to prevent module-level cache leaking the truthy probe value into the legacy-SQL test
+
+Architect verification: APPROVE (all 8 ACs verified; no critical/major findings).
+
+Deslop pass (bounded to Ralph-session files):
+- Exported ProjectDialogActiveUser from project-dialog-form, removed local dup in workspace-context
+- Replaced map+filter+typeGuard with flatMap in workspace-shell (drops awkward type predicate)
+- Added rollback regression test: createProject propagates errors from mid-TX queries (covers architect's optional follow-up + locks atomic invariant)
+
+Post-deslop regression: 809 passed, 5 skipped, 0 failed; tsc 0 errors; lint exit 0.

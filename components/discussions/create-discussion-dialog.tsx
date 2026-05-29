@@ -34,9 +34,15 @@ export function CreateDiscussionDialog(props: CreateDiscussionDialogProps) {
       <form method="dialog" className="dialogForm">
         <h3>Create Discussion</h3>
         <div className="form">
-          <input value={title} onChange={(event) => onTitleChange(event.target.value)} placeholder="Discussion title" />
-          {editor}
-          {attachmentsSlot}
+          <div className="withAside">
+            <div>
+              <input value={title} onChange={(event) => onTitleChange(event.target.value)} placeholder="Discussion title" />
+              {editor}
+            </div>
+            <div>
+              {attachmentsSlot}
+            </div>
+          </div>
         </div>
         <div className="row">
           <OneShotButton type="button" onClick={onCreate} disabled={submitDisabled}>

@@ -1,0 +1,12 @@
+{
+  "active": false,
+  "current_phase": "pending-approval",
+  "plan_path": ".omc/plans/ralplan-when-adding-new-project-user.md",
+  "completed_at": "2026-05-21T20:08:00Z",
+  "_meta": {
+    "mode": "ralplan",
+    "sessionId": null,
+    "updatedAt": "2026-05-21T20:15:33.966Z",
+    "updatedBy": "state_write_tool"
+  }
+}

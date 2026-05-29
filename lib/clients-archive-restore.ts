@@ -81,7 +81,7 @@ export function createClientArchiveRestoreHandler(mode: ClientArchiveRestoreMode
         }
       });
 
-      return ok({ pollUrl: `/clients/${id}` }, 202);
+      return ok({ pollUrl: `/api/clients/${id}` }, 202);
     } catch (error) {
       if (error instanceof Error && /auth|token|workspace/i.test(error.message)) {
         return unauthorized(error.message);

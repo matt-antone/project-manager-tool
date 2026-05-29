@@ -30,7 +30,12 @@ const baseWorkspace = {
   clients: [],
   isCreatingProject: false,
   createProject: vi.fn(),
-  setStatus: vi.fn()
+  setStatus: vi.fn(),
+  userId: null,
+  activeUsers: [],
+  selectedMemberIds: [],
+  addMember: vi.fn(),
+  removeMember: vi.fn()
 };
 
 vi.mock("@/components/projects/projects-workspace-context", () => ({
