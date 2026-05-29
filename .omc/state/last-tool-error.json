@@ -1,0 +1,7 @@
+{
+  "tool_name": "Bash",
+  "tool_input_preview": "{\"command\":\"pnpm exec fallow fix\",\"description\":\"Auto-fix dead exports\"}",
+  "error": "Exit code 2\n! Corepack is about to download https://registry.npmjs.org/pnpm/-/pnpm-10.32.1.tgz\nError: fix command requires --yes (or --force) in non-interactive environments. Use --dry-run to preview changes first, then pass --yes to confirm.",
+  "timestamp": "2026-05-29T01:06:56.559Z",
+  "retry_count": 1
+}

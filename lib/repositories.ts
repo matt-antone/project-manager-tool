@@ -1443,7 +1443,7 @@ export async function setProjectUserHours(args: {
   return result.rows[0] ?? null;
 }
 
-export function isMissingProjectUserHoursTableError(error: unknown) {
+function isMissingProjectUserHoursTableError(error: unknown) {
   if (!(error instanceof Error)) {
     return false;
   }
