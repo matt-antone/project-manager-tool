@@ -46,3 +46,4 @@ tmp/
 .omc/state/hud-stdin-cache.json
 .omc/state/subagent-tracking.json
 .omc/state/agent-replay-*.jsonl
+.omc/state/*
