@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "lastScanned": 1779998156734,
+  "lastScanned": 1781033319773,
   "projectRoot": "/Volumes/External/Glyphix Dropbox/Development Files/Under Development/Project Manager/basecamp-clone",
   "techStack": {
     "languages": [
@@ -47,8 +47,8 @@
     "runtime": null
   },
   "build": {
-    "buildCommand": "pnpm build",
-    "testCommand": "pnpm test",
+    "buildCommand": "cd \"/Volumes/External/Glyphix Dropbox/Development Files/Under Development/Project Manager/basecamp-clone\" && pnpm vitest run tests/unit/upload-abort-route.test.ts 2>&1 | tail -8 && pnpm exec tsc --noEmit; echo \"tsc exit: $?\"",
+    "testCommand": "cd \"/Volumes/External/Glyphix Dropbox/Development Files/Under Development/Project Manager/basecamp-clone\" && pnpm vitest run tests/unit/upload-abort-route.test.ts 2>&1 | tail -8 && pnpm exec tsc --noEmit; echo \"tsc exit: $?\"",
     "lintCommand": "pnpm lint",
     "devCommand": "pnpm dev",
     "scripts": {
@@ -103,7 +103,7 @@
       "path": "app",
       "purpose": "Application code",
       "fileCount": 6,
-      "lastAccessed": 1779998156426,
+      "lastAccessed": 1781033319577,
       "keyFiles": [
         "AGENTS.md",
         "header.tsx",
@@ -116,7 +116,7 @@
       "path": "backups",
       "purpose": null,
       "fileCount": 11,
-      "lastAccessed": 1779998156427,
+      "lastAccessed": 1781033319583,
       "keyFiles": [
         "dev-20260501-091409.sql",
         "dev-20260501-092358.sql",
@@ -129,7 +129,7 @@
       "path": "certificates",
       "purpose": null,
       "fileCount": 2,
-      "lastAccessed": 1779998156517,
+      "lastAccessed": 1781033319647,
       "keyFiles": [
         "localhost-key.pem",
         "localhost.pem"
@@ -139,7 +139,7 @@
       "path": "components",
       "purpose": "UI components",
       "fileCount": 8,
-      "lastAccessed": 1779998156517,
+      "lastAccessed": 1781033319648,
       "keyFiles": [
         "AGENTS.md",
         "file-thumbnail-preview.tsx",
@@ -152,7 +152,7 @@
       "path": "docs",
       "purpose": "Documentation",
       "fileCount": 3,
-      "lastAccessed": 1779998156518,
+      "lastAccessed": 1781033319660,
       "keyFiles": [
         "AGENTS.md",
         "audit-2026-04-16.md"
@@ -162,7 +162,7 @@
       "path": "lib",
       "purpose": "Library code",
       "fileCount": 37,
-      "lastAccessed": 1779998156518,
+      "lastAccessed": 1781033319683,
       "keyFiles": [
         "AGENTS.md",
         "archive-projects-url.ts",
@@ -175,21 +175,21 @@
       "path": "node-compile-cache",
       "purpose": null,
       "fileCount": 0,
-      "lastAccessed": 1779998156534,
+      "lastAccessed": 1781033319688,
       "keyFiles": []
     },
     "orchestration": {
       "path": "orchestration",
       "purpose": null,
       "fileCount": 1,
-      "lastAccessed": 1779998156535,
+      "lastAccessed": 1781033319722,
       "keyFiles": []
     },
     "public": {
       "path": "public",
       "purpose": "Public files",
       "fileCount": 2,
-      "lastAccessed": 1779998156535,
+      "lastAccessed": 1781033319728,
       "keyFiles": [
         "gx-logo.png",
         "gx-logo.webp"
@@ -199,7 +199,7 @@
       "path": "scripts",
       "purpose": "Build/utility scripts",
       "fileCount": 21,
-      "lastAccessed": 1779998156536,
+      "lastAccessed": 1781033319728,
       "keyFiles": [
         "apply-orphan-decisions.ts",
         "audit-bc2-dump.ts",
@@ -212,7 +212,7 @@
       "path": "skills",
       "purpose": null,
       "fileCount": 1,
-      "lastAccessed": 1779998156537,
+      "lastAccessed": 1781033319729,
       "keyFiles": [
         "AGENTS.md"
       ]
@@ -221,7 +221,7 @@
       "path": "supabase",
       "purpose": null,
       "fileCount": 3,
-      "lastAccessed": 1779998156541,
+      "lastAccessed": 1781033319729,
       "keyFiles": [
         "AGENTS.md",
         "config.toml"
@@ -231,14 +231,14 @@
       "path": "tests",
       "purpose": "Test files",
       "fileCount": 1,
-      "lastAccessed": 1779998156541,
+      "lastAccessed": 1781033319730,
       "keyFiles": []
     },
     "tmp": {
       "path": "tmp",
       "purpose": null,
       "fileCount": 16,
-      "lastAccessed": 1779998156542,
+      "lastAccessed": 1781033319731,
       "keyFiles": [
         "bc2-import-orphans.csv",
         "bc2-import-summary.json",
@@ -251,7 +251,7 @@
       "path": "app/api",
       "purpose": "API routes",
       "fileCount": 1,
-      "lastAccessed": 1779998156544,
+      "lastAccessed": 1781033319735,
       "keyFiles": [
         "AGENTS.md"
       ]
@@ -260,7 +260,7 @@
       "path": "supabase/migrations",
       "purpose": "Database migrations",
       "fileCount": 33,
-      "lastAccessed": 1779998156546,
+      "lastAccessed": 1781033319760,
       "keyFiles": [
         "0001_init.sql",
         "0002_clients.sql",
@@ -271,15 +271,15 @@
       "path": "tests/fixtures",
       "purpose": "Test fixtures",
       "fileCount": 0,
-      "lastAccessed": 1779998156552,
+      "lastAccessed": 1781033319772,
       "keyFiles": []
     }
   },
   "hotPaths": [
     {
       "path": "lib/repositories.ts",
-      "accessCount": 37,
-      "lastAccessed": 1779395539409,
+      "accessCount": 39,
+      "lastAccessed": 1781034302190,
       "type": "file"
     },
     {

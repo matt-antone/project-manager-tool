@@ -107,19 +107,55 @@ export class DropboxStorageAdapter {
     };
   }
 
+  /**
+   * Resolve a collision-free path for an upload inside `dir`. Returns `dir/filename` when nothing
+   * exists there, otherwise inserts an incrementing `-N` before the extension
+   * (`report.pdf` -> `report-1.pdf` -> `report-2.pdf` ...). Keeps the temporary upload link's
+   * mode:add/autorename:false commit from conflicting.
+   */
+  async resolveAvailableUploadPath(args: { dir: string; filename: string }): Promise<string> {
+    const dot = args.filename.lastIndexOf(".");
+    // dot must be > 0 so dotfiles (already blocked upstream) don't get treated as all-extension.
+    const base = dot > 0 ? args.filename.slice(0, dot) : args.filename;
+    const ext = dot > 0 ? args.filename.slice(dot) : "";
+    const MAX_ATTEMPTS = 1000;
+    for (let i = 0; i < MAX_ATTEMPTS; i += 1) {
+      const candidateName = i === 0 ? `${base}${ext}` : `${base}-${i}${ext}`;
+      const candidatePath = `${args.dir}/${candidateName}`;
+      if (!(await this.pathExists(candidatePath))) {
+        return candidatePath;
+      }
+    }
+    throw new Error(`Unable to resolve a unique upload path for ${args.filename} in ${args.dir}`);
+  }
+
   async getTemporaryUploadLink(args: { targetPath: string }): Promise<{ uploadUrl: string }> {
     const client = await this.getClient();
     const response = await client.filesGetTemporaryUploadLink({
       commit_info: {
         path: args.targetPath,
         mode: { ".tag": "add" },
-        // autorename is false because targetPath is UUID-prefixed and globally unique by construction
+        // autorename:false is safe because the caller resolves a collision-free path up front
+        // (see resolveAvailableUploadPath); the commit path is verified not to exist yet.
         autorename: false,
         mute: true
       },
       duration: 14400 // 4 hours, the documented Dropbox max for this endpoint
     });
     return { uploadUrl: response.result.link };
+  }
+
+  /** Delete a Dropbox file/folder by path. Idempotent: a missing path is treated as success. */
+  async deleteByPath(path: string): Promise<void> {
+    const client = await this.getClient();
+    try {
+      await client.filesDeleteV2({ path });
+    } catch (error) {
+      if (isNotFoundError(error)) {
+        return;
+      }
+      throw error;
+    }
   }
 
   async getFileMetadata(args: { targetPath: string }): Promise<{

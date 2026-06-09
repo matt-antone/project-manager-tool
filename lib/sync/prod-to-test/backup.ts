@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { promises as fs } from "node:fs";
 import * as path from "node:path";
 
-export class BackupError extends Error {}
+class BackupError extends Error {}
 
 export function toPoolerUrl(databaseUrl: string): string {
   return databaseUrl.replace(/:6543\b/, ":5432");

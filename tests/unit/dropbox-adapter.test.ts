@@ -169,6 +169,77 @@ describe("DropboxStorageAdapter.getTemporaryUploadLink", () => {
   });
 });
 
+describe("DropboxStorageAdapter.deleteByPath", () => {
+  it("deletes the path via filesDeleteV2", async () => {
+    const filesDeleteV2 = vi.fn().mockResolvedValue({ result: {} });
+    const { DropboxStorageAdapter } = await import("@/lib/storage/dropbox-adapter");
+    const adapter = new DropboxStorageAdapter();
+    adapter.getClient = async () => ({ filesDeleteV2 }) as unknown as Dropbox;
+
+    await adapter.deleteByPath("/Projects/ACME/ACME-0001-Brief/uploads/cover.jpg");
+    expect(filesDeleteV2).toHaveBeenCalledWith({ path: "/Projects/ACME/ACME-0001-Brief/uploads/cover.jpg" });
+  });
+
+  it("treats a not_found path as already deleted", async () => {
+    const filesDeleteV2 = vi.fn().mockRejectedValue(new Error("path_lookup/not_found/"));
+    const { DropboxStorageAdapter } = await import("@/lib/storage/dropbox-adapter");
+    const adapter = new DropboxStorageAdapter();
+    adapter.getClient = async () => ({ filesDeleteV2 }) as unknown as Dropbox;
+
+    await expect(adapter.deleteByPath("/Projects/ACME/ACME-0001-Brief/uploads/gone.jpg")).resolves.toBeUndefined();
+  });
+
+  it("rethrows non-not_found errors", async () => {
+    const filesDeleteV2 = vi.fn().mockRejectedValue(new Error("insufficient_space"));
+    const { DropboxStorageAdapter } = await import("@/lib/storage/dropbox-adapter");
+    const adapter = new DropboxStorageAdapter();
+    adapter.getClient = async () => ({ filesDeleteV2 }) as unknown as Dropbox;
+
+    await expect(adapter.deleteByPath("/Projects/ACME/ACME-0001-Brief/uploads/x.jpg")).rejects.toThrow(/insufficient_space/);
+  });
+});
+
+describe("DropboxStorageAdapter.resolveAvailableUploadPath", () => {
+  function adapterWithExisting(existing: Set<string>) {
+    const filesGetMetadata = vi.fn(async ({ path }: { path: string }) => {
+      if (existing.has(path)) {
+        return { result: { ".tag": "file", id: "id", path_display: path } };
+      }
+      throw new Error("path/not_found/");
+    });
+    const adapter = new DropboxStorageAdapter();
+    adapter.getClient = async () => ({ filesGetMetadata }) as unknown as Dropbox;
+    return { adapter, filesGetMetadata };
+  }
+
+  const DIR = "/Projects/ACME/ACME-0001-Brief/uploads";
+
+  it("returns the unsuffixed path when nothing exists", async () => {
+    const { adapter, filesGetMetadata } = adapterWithExisting(new Set());
+    const result = await adapter.resolveAvailableUploadPath({ dir: DIR, filename: "report.pdf" });
+    expect(result).toBe(`${DIR}/report.pdf`);
+    expect(filesGetMetadata).toHaveBeenCalledTimes(1);
+  });
+
+  it("inserts an incrementing -N before the extension on collision", async () => {
+    const { adapter } = adapterWithExisting(new Set([`${DIR}/report.pdf`, `${DIR}/report-1.pdf`]));
+    const result = await adapter.resolveAvailableUploadPath({ dir: DIR, filename: "report.pdf" });
+    expect(result).toBe(`${DIR}/report-2.pdf`);
+  });
+
+  it("appends -N for extensionless filenames", async () => {
+    const { adapter } = adapterWithExisting(new Set([`${DIR}/README`]));
+    const result = await adapter.resolveAvailableUploadPath({ dir: DIR, filename: "README" });
+    expect(result).toBe(`${DIR}/README-1`);
+  });
+
+  it("preserves multi-dot names, splitting on the last dot", async () => {
+    const { adapter } = adapterWithExisting(new Set([`${DIR}/archive.tar.gz`]));
+    const result = await adapter.resolveAvailableUploadPath({ dir: DIR, filename: "archive.tar.gz" });
+    expect(result).toBe(`${DIR}/archive.tar-1.gz`);
+  });
+});
+
 describe("DropboxStorageAdapter.getFileMetadata", () => {
   it("looks up by targetPath and returns normalized fields", async () => {
     const filesGetMetadata = vi.fn().mockResolvedValue({

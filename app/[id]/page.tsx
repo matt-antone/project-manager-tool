@@ -772,6 +772,7 @@ function ProjectPageContent({ projectId, initial }: { projectId: string; initial
     if (!token || !projectId || !selectedFile) return;
     setIsUploading(true);
     setUploadError(null);
+    let targetPath: string | undefined;
     try {
       // 1. Mint a Dropbox temporary upload link.
       const initRes = await authedFetch(token, `/projects/${projectId}/files/upload-init`, {
@@ -782,7 +783,8 @@ function ProjectPageContent({ projectId, initial }: { projectId: string; initial
           sizeBytes: selectedFile.size
         })
       });
-      const { uploadUrl, targetPath, requestId } = initRes as { uploadUrl: string; targetPath: string; requestId: string };
+      const { uploadUrl, requestId } = initRes as { uploadUrl: string; targetPath: string; requestId: string };
+      targetPath = (initRes as { targetPath: string }).targetPath;
 
       // 2. POST bytes directly to Dropbox via XHR (Fetch lacks upload-progress events).
       //    Dropbox's /2/files/get_temporary_upload_link returns a content-server URL
@@ -856,6 +858,18 @@ function ProjectPageContent({ projectId, initial }: { projectId: string; initial
       await load(token, projectId);
     } catch (err) {
       console.error("upload_failed", err);
+      // The temporary upload link may have committed bytes before failing. Delete that orphan
+      // (best effort) so the original filename is free again on retry.
+      if (targetPath) {
+        try {
+          await authedFetch(token, `/projects/${projectId}/files/upload-abort`, {
+            method: "POST",
+            body: JSON.stringify({ targetPath })
+          });
+        } catch {
+          // best effort — never mask the original upload error
+        }
+      }
       setUploadError(err instanceof Error ? err.message : "Upload failed");
     } finally {
       setIsUploading(false);

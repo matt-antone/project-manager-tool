@@ -1,0 +1,7 @@
+{
+  "tool_name": "Bash",
+  "tool_input_preview": "{\"command\":\"cd \\\"/Volumes/External/Glyphix Dropbox/Development Files/Under Development/Project Manager/basecamp-clone\\\" && grep -rniE \\\"uploadAttachment\\\\(|from \\\\\\\"@/lib/attachment-upload\\\\\\\"|upload-...",
+  "error": "Exit code 1\napp/[id]/page.tsx:24:import { uploadAttachment } from \"@/lib/attachment-upload\";\napp/[id]/page.tsx:482:            await uploadAttachment({\napp/[id]/page.tsx:777:      const initRes = await authedFetch(token, `/projects/${projectId}/files/upload-init`, {\napp/[id]/page.tsx:790:      //    so we rely on targetPath (returned from /upload-init) for the metadata lookup.\napp/[id]/page.tsx:840:      const completeRes = await authedFetch(token, `/projects/${projectId}/files/upload-complete`,...",
+  "timestamp": "2026-06-09T19:42:21.040Z",
+  "retry_count": 1
+}

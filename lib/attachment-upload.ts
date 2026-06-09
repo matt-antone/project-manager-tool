@@ -34,6 +34,19 @@ export async function uploadAttachment(args: UploadAttachmentArgs) {
   });
   const { uploadUrl, targetPath, requestId } = initData as { uploadUrl: string; targetPath: string; requestId: string };
 
+  try {
+    await uploadBytesAndFinalize();
+  } catch (error) {
+    // The temporary upload link may have already committed bytes to Dropbox before failing.
+    // Delete that orphan (best effort) so the original filename is free again on retry.
+    await abortUpload({ accessToken: resolvedToken, onToken, projectId, targetPath });
+    throw error;
+  }
+
+  onUploadProgress(1);
+
+  // --- Steps 2 & 3, scoped so a failure can trigger orphan cleanup. ---
+  async function uploadBytesAndFinalize() {
   // 2. POST bytes directly to Dropbox via XHR (Fetch lacks upload-progress events).
   //    Dropbox temporary upload links accept POST with the file body. The response is
   //    only {"content-hash": "..."} so we rely on targetPath for the metadata lookup.
@@ -110,6 +123,26 @@ export async function uploadAttachment(args: UploadAttachmentArgs) {
     onToken,
     path: `/projects/${projectId}/files/upload-complete`
   });
+  }
 
-  onUploadProgress(1);
+  async function abortUpload(abortArgs: {
+    accessToken: string;
+    onToken: (token: string | null) => void;
+    projectId: string;
+    targetPath: string;
+  }) {
+    try {
+      await authedJsonFetch({
+        accessToken: abortArgs.accessToken,
+        init: {
+          method: "POST",
+          body: JSON.stringify({ targetPath: abortArgs.targetPath })
+        },
+        onToken: abortArgs.onToken,
+        path: `/projects/${abortArgs.projectId}/files/upload-abort`
+      });
+    } catch {
+      // Cleanup is best effort — never mask the original upload error.
+    }
+  }
 }

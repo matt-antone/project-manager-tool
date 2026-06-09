@@ -5,6 +5,7 @@ const getProjectMock = vi.fn();
 const assertClientNotArchivedForMutationMock = vi.fn();
 const getProjectStorageDirMock = vi.fn();
 const getTemporaryUploadLinkMock = vi.fn();
+const resolveAvailableUploadPathMock = vi.fn();
 
 vi.mock("@/lib/auth", () => ({ requireUser: requireUserMock }));
 vi.mock("@/lib/repositories", () => ({
@@ -16,6 +17,7 @@ vi.mock("@/lib/project-storage", () => ({
 }));
 vi.mock("@/lib/storage/dropbox-adapter", () => ({
   DropboxStorageAdapter: class {
+    resolveAvailableUploadPath = resolveAvailableUploadPathMock;
     getTemporaryUploadLink = getTemporaryUploadLinkMock;
   }
 }));
@@ -34,9 +36,13 @@ function makeRequest(body: unknown) {
 describe("POST /projects/[id]/files/upload-init", () => {
   beforeEach(() => {
     vi.resetModules();
-    [requireUserMock, getProjectMock, assertClientNotArchivedForMutationMock, getProjectStorageDirMock, getTemporaryUploadLinkMock]
+    [requireUserMock, getProjectMock, assertClientNotArchivedForMutationMock, getProjectStorageDirMock, getTemporaryUploadLinkMock, resolveAvailableUploadPathMock]
       .forEach((m) => m.mockReset());
     getProjectStorageDirMock.mockReturnValue(STORAGE_DIR);
+    // Default: filename is free, so resolution returns the unsuffixed path.
+    resolveAvailableUploadPathMock.mockImplementation(
+      async ({ dir, filename }: { dir: string; filename: string }) => `${dir}/${filename}`
+    );
   });
 
   it("returns 200 with uploadUrl, targetPath, requestId for a valid request", async () => {
@@ -54,9 +60,29 @@ describe("POST /projects/[id]/files/upload-init", () => {
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.uploadUrl).toBe("https://content.dropboxapi.com/apitul/x/abc");
-    expect(json.targetPath).toBe(`${STORAGE_DIR}/uploads/cover.jpg`);
     expect(typeof json.requestId).toBe("string");
+    expect(resolveAvailableUploadPathMock).toHaveBeenCalledWith({ dir: `${STORAGE_DIR}/uploads`, filename: "cover.jpg" });
+    expect(json.targetPath).toBe(`${STORAGE_DIR}/uploads/cover.jpg`);
     expect(getTemporaryUploadLinkMock).toHaveBeenCalledWith({ targetPath: json.targetPath });
+  });
+
+  it("uses the collision-free path returned by resolveAvailableUploadPath", async () => {
+    requireUserMock.mockResolvedValue({ id: "user-1" });
+    getProjectMock.mockResolvedValue(PROJECT);
+    assertClientNotArchivedForMutationMock.mockResolvedValue(undefined);
+    resolveAvailableUploadPathMock.mockResolvedValue(`${STORAGE_DIR}/uploads/cover-2.jpg`);
+    getTemporaryUploadLinkMock.mockResolvedValue({ uploadUrl: "https://content.dropboxapi.com/apitul/x/abc" });
+
+    const { POST } = await import("@/app/projects/[id]/files/upload-init/route");
+    const res = await POST(
+      makeRequest({ filename: "cover.jpg", mimeType: "image/jpeg", sizeBytes: 1234 }),
+      { params: Promise.resolve({ id: "project-1" }) }
+    );
+
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.targetPath).toBe(`${STORAGE_DIR}/uploads/cover-2.jpg`);
+    expect(getTemporaryUploadLinkMock).toHaveBeenCalledWith({ targetPath: `${STORAGE_DIR}/uploads/cover-2.jpg` });
   });
 
   it("returns 401 when requireUser throws", async () => {

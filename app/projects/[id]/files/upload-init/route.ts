@@ -41,8 +41,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     }
 
     const requestId = randomUUID();
-    const targetPath = `${getProjectStorageDir(project)}/uploads/${parsed.data.filename}`;
     const adapter = new DropboxStorageAdapter();
+    // Resolve a collision-free name up front (foo.pdf -> foo-1.pdf -> foo-2.pdf ...). The temporary
+    // upload link commits with mode:add/autorename:false, so it 409s ("Temporary upload link led to
+    // invalid upload attempt") if the path already exists; picking a free path avoids that.
+    const uploadsDir = `${getProjectStorageDir(project)}/uploads`;
+    const targetPath = await adapter.resolveAvailableUploadPath({ dir: uploadsDir, filename: parsed.data.filename });
     const { uploadUrl } = await adapter.getTemporaryUploadLink({ targetPath });
 
     return ok({

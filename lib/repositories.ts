@@ -1443,7 +1443,7 @@ export async function setProjectUserHours(args: {
   return result.rows[0] ?? null;
 }
 
-export function isMissingProjectUserHoursTableError(error: unknown) {
+function isMissingProjectUserHoursTableError(error: unknown) {
   if (!(error instanceof Error)) {
     return false;
   }
@@ -1949,6 +1949,18 @@ export async function getFileById(projectId: string, fileId: string) {
     [projectId, fileId]
   );
   return result.rows[0] ? normalizeProjectFileSizeRow(result.rows[0]) : null;
+}
+
+/**
+ * Returns the tracked file row at a given Dropbox path, or null. Used to distinguish an orphaned
+ * upload (no row — safe to delete) from an established file (has a row — must not be deleted).
+ */
+export async function getFileByDropboxPath(projectId: string, dropboxPath: string) {
+  const result = await query(
+    "select id from project_files where project_id = $1 and dropbox_path = $2 limit 1",
+    [projectId, dropboxPath]
+  );
+  return result.rows[0] ?? null;
 }
 
 export async function setFileThumbnailUrl(args: {
