@@ -54,6 +54,7 @@ export default function SiteHeader() {
   const pathname = usePathname();
   const projectsNavActive = projectsNavHighlight(pathname);
   const clientsNavActive = pathname?.startsWith("/clients") ?? false;
+  const toolsNavActive = pathname?.startsWith("/tools") ?? false;
 
   const [theme, setTheme] = useState<Theme>("light");
   const [user, setUser] = useState<SessionUser | null>(null);
@@ -275,6 +276,14 @@ export default function SiteHeader() {
               scroll={false}
             >
               Archive
+            </Link>
+            <Link
+              href="/tools"
+              prefetch={false}
+              className={`themeTopBarProjectsLink ${toolsNavActive ? "themeTopBarProjectsLinkActive" : ""}`}
+              scroll={false}
+            >
+              Tools
             </Link>
           </nav>
         )}

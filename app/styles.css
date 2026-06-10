@@ -3897,3 +3897,107 @@ textarea:focus-visible,
 .memberCheckboxItem label input{
   width:fit-content;
 }
+
+.toolsPage {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 1.75rem 1.25rem 3rem;
+  display: grid;
+  gap: 1.5rem;
+}
+
+.toolsPageHeader {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.toolsPageTitle {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  color: var(--text-primary);
+}
+
+.toolsPageSubtitle {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.toolsCard {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1.25rem;
+  border-radius: 0.75rem;
+  border: 1px solid color-mix(in srgb, var(--panel-border) 78%, transparent);
+  background: color-mix(in srgb, var(--panel-bg) 84%, transparent);
+  box-shadow: var(--surface-shadow-soft);
+}
+
+.toolsCardTitle {
+  margin: 0;
+  font-size: var(--text-lg);
+  color: var(--text-primary);
+}
+
+.toolsCardHint {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.toolsFieldLabel {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--text-primary);
+}
+
+.toolsInput {
+  width: 100%;
+  resize: vertical;
+  padding: 0.6rem 0.7rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--input-border);
+  background: var(--input-bg);
+  color: var(--text-primary);
+  font: inherit;
+  line-height: var(--leading-normal);
+}
+
+.toolsInput:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.toolsError {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: #b4452f;
+}
+
+.toolsQrResult {
+  display: grid;
+  justify-items: center;
+  gap: 0.9rem;
+  padding: 0.5rem 0;
+}
+
+.toolsQrImage {
+  width: 320px;
+  height: 320px;
+  max-width: 100%;
+  border-radius: 0.5rem;
+  background: #ffffff;
+  padding: 0.5rem;
+  border: 1px solid color-mix(in srgb, var(--panel-border) 78%, transparent);
+}
+
+.toolsQrPlaceholder {
+  display: grid;
+  place-items: center;
+  min-height: 160px;
+  border-radius: 0.5rem;
+  border: 1px dashed color-mix(in srgb, var(--panel-border) 70%, transparent);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
