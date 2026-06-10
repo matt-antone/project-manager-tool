@@ -6,6 +6,7 @@ import {
   BoldItalicUnderlineToggles,
   CreateLink,
   DiffSourceToggleWrapper,
+  InsertTable,
   ListsToggle,
   MDXEditor,
   Separator,
@@ -16,6 +17,7 @@ import {
   listsPlugin,
   markdownShortcutPlugin,
   quotePlugin,
+  tablePlugin,
   toolbarPlugin
 } from "@mdxeditor/editor";
 
@@ -40,6 +42,7 @@ function MarkdownEditorImpl(props: MarkdownEditorProps) {
       headingsPlugin(),
       listsPlugin(),
       quotePlugin(),
+      tablePlugin(),
       linkPlugin(),
       linkDialogPlugin(),
       markdownShortcutPlugin(),
@@ -50,6 +53,7 @@ function MarkdownEditorImpl(props: MarkdownEditorProps) {
             <Separator />
             <BoldItalicUnderlineToggles />
             <CreateLink />
+            <InsertTable />
             <Separator />
             <ListsToggle />
             <BlockTypeSelect />
