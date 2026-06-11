@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "lastScanned": 1781033319773,
+  "lastScanned": 1781131843895,
   "projectRoot": "/Volumes/External/Glyphix Dropbox/Development Files/Under Development/Project Manager/basecamp-clone",
   "techStack": {
     "languages": [
@@ -47,8 +47,8 @@
     "runtime": null
   },
   "build": {
-    "buildCommand": "cd \"/Volumes/External/Glyphix Dropbox/Development Files/Under Development/Project Manager/basecamp-clone\" && pnpm vitest run tests/unit/upload-abort-route.test.ts 2>&1 | tail -8 && pnpm exec tsc --noEmit; echo \"tsc exit: $?\"",
-    "testCommand": "cd \"/Volumes/External/Glyphix Dropbox/Development Files/Under Development/Project Manager/basecamp-clone\" && pnpm vitest run tests/unit/upload-abort-route.test.ts 2>&1 | tail -8 && pnpm exec tsc --noEmit; echo \"tsc exit: $?\"",
+    "buildCommand": "cd \"/Volumes/External/Glyphix Dropbox/Development Files/Under Development/Project Manager/basecamp-clone\" && pnpm exec tsc --noEmit 2>&1 | grep -i \"markdown-editor\" || echo \"NO TS ERRORS in markdown-editor.tsx\"",
+    "testCommand": "cd \"/Volumes/External/Glyphix Dropbox/Development Files/Under Development/Project Manager/basecamp-clone\" && gh pr create --base main --head staging --title \"feat: clients pages, tools tab, member selection, sync importer, editor tables\" --body \"$(cat <<'EOF'\n## Summary\n- **Clients section**: list page, detail page with tabs, edit dialog, stats (active/archived counts, last activity)\n- **Tools tab**: QR code generator (640px resolution) accessible from project nav\n- **Project creation**: member selection at creation time\n- **Markdown editor**: table support enabled\n- **Prod→test sync importer**: full pipeline (clients, users, projects, threads, comments, files, members, hours, expenses) with watermarks and `--refresh-metadata` flag\n- **Uploads**: deduplicate filenames with `-N` suffix; clean up orphaned storage on failure\n- **Delete own discussion**: author can delete thread when no third-party comments exist\n- **Security**: escape project name in member-add email\n- Various fixes: logout, tab titles, routing, build errors\n\n## Test Plan\n- [ ] Clients list shows active/archived tabs with counts\n- [ ] Client detail page loads header, project tabs, edit dialog\n- [ ] Tools tab visible in project nav; QR code generates at 640px\n- [ ] New project creation shows member selector\n- [ ] Markdown editor renders table syntax\n- [ ] Upload duplicate filenames get `-N` suffix\n- [ ] Author can delete own discussion (no third-party comments)\n- [ ] All 824 unit tests pass (`pnpm test`)\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\nEOF\n)\"",
     "lintCommand": "pnpm lint",
     "devCommand": "pnpm dev",
     "scripts": {
@@ -103,7 +103,7 @@
       "path": "app",
       "purpose": "Application code",
       "fileCount": 6,
-      "lastAccessed": 1781033319577,
+      "lastAccessed": 1781131843856,
       "keyFiles": [
         "AGENTS.md",
         "header.tsx",
@@ -116,7 +116,7 @@
       "path": "backups",
       "purpose": null,
       "fileCount": 11,
-      "lastAccessed": 1781033319583,
+      "lastAccessed": 1781131843857,
       "keyFiles": [
         "dev-20260501-091409.sql",
         "dev-20260501-092358.sql",
@@ -129,7 +129,7 @@
       "path": "certificates",
       "purpose": null,
       "fileCount": 2,
-      "lastAccessed": 1781033319647,
+      "lastAccessed": 1781131843873,
       "keyFiles": [
         "localhost-key.pem",
         "localhost.pem"
@@ -139,7 +139,7 @@
       "path": "components",
       "purpose": "UI components",
       "fileCount": 8,
-      "lastAccessed": 1781033319648,
+      "lastAccessed": 1781131843875,
       "keyFiles": [
         "AGENTS.md",
         "file-thumbnail-preview.tsx",
@@ -152,7 +152,7 @@
       "path": "docs",
       "purpose": "Documentation",
       "fileCount": 3,
-      "lastAccessed": 1781033319660,
+      "lastAccessed": 1781131843875,
       "keyFiles": [
         "AGENTS.md",
         "audit-2026-04-16.md"
@@ -162,7 +162,7 @@
       "path": "lib",
       "purpose": "Library code",
       "fileCount": 37,
-      "lastAccessed": 1781033319683,
+      "lastAccessed": 1781131843876,
       "keyFiles": [
         "AGENTS.md",
         "archive-projects-url.ts",
@@ -175,21 +175,21 @@
       "path": "node-compile-cache",
       "purpose": null,
       "fileCount": 0,
-      "lastAccessed": 1781033319688,
+      "lastAccessed": 1781131843876,
       "keyFiles": []
     },
     "orchestration": {
       "path": "orchestration",
       "purpose": null,
       "fileCount": 1,
-      "lastAccessed": 1781033319722,
+      "lastAccessed": 1781131843876,
       "keyFiles": []
     },
     "public": {
       "path": "public",
       "purpose": "Public files",
       "fileCount": 2,
-      "lastAccessed": 1781033319728,
+      "lastAccessed": 1781131843876,
       "keyFiles": [
         "gx-logo.png",
         "gx-logo.webp"
@@ -199,7 +199,7 @@
       "path": "scripts",
       "purpose": "Build/utility scripts",
       "fileCount": 21,
-      "lastAccessed": 1781033319728,
+      "lastAccessed": 1781131843877,
       "keyFiles": [
         "apply-orphan-decisions.ts",
         "audit-bc2-dump.ts",
@@ -212,7 +212,7 @@
       "path": "skills",
       "purpose": null,
       "fileCount": 1,
-      "lastAccessed": 1781033319729,
+      "lastAccessed": 1781131843877,
       "keyFiles": [
         "AGENTS.md"
       ]
@@ -221,7 +221,7 @@
       "path": "supabase",
       "purpose": null,
       "fileCount": 3,
-      "lastAccessed": 1781033319729,
+      "lastAccessed": 1781131843877,
       "keyFiles": [
         "AGENTS.md",
         "config.toml"
@@ -231,14 +231,14 @@
       "path": "tests",
       "purpose": "Test files",
       "fileCount": 1,
-      "lastAccessed": 1781033319730,
+      "lastAccessed": 1781131843877,
       "keyFiles": []
     },
     "tmp": {
       "path": "tmp",
       "purpose": null,
       "fileCount": 16,
-      "lastAccessed": 1781033319731,
+      "lastAccessed": 1781131843878,
       "keyFiles": [
         "bc2-import-orphans.csv",
         "bc2-import-summary.json",
@@ -251,7 +251,7 @@
       "path": "app/api",
       "purpose": "API routes",
       "fileCount": 1,
-      "lastAccessed": 1781033319735,
+      "lastAccessed": 1781131843878,
       "keyFiles": [
         "AGENTS.md"
       ]
@@ -260,7 +260,7 @@
       "path": "supabase/migrations",
       "purpose": "Database migrations",
       "fileCount": 33,
-      "lastAccessed": 1781033319760,
+      "lastAccessed": 1781131843879,
       "keyFiles": [
         "0001_init.sql",
         "0002_clients.sql",
@@ -271,7 +271,7 @@
       "path": "tests/fixtures",
       "purpose": "Test fixtures",
       "fileCount": 0,
-      "lastAccessed": 1781033319772,
+      "lastAccessed": 1781131843880,
       "keyFiles": []
     }
   },
@@ -280,6 +280,12 @@
       "path": "lib/repositories.ts",
       "accessCount": 39,
       "lastAccessed": 1781034302190,
+      "type": "file"
+    },
+    {
+      "path": "app/styles.css",
+      "accessCount": 11,
+      "lastAccessed": 1781111417592,
       "type": "file"
     },
     {
@@ -295,21 +301,27 @@
       "type": "file"
     },
     {
-      "path": "app/styles.css",
-      "accessCount": 9,
-      "lastAccessed": 1780003183639,
-      "type": "file"
-    },
-    {
       "path": "tests/unit/billing-project-row.test.tsx",
       "accessCount": 6,
       "lastAccessed": 1779389721097,
       "type": "file"
     },
     {
+      "path": "components/markdown-editor.tsx",
+      "accessCount": 6,
+      "lastAccessed": 1781133069861,
+      "type": "file"
+    },
+    {
       "path": "components/projects/projects-billing.tsx",
       "accessCount": 5,
       "lastAccessed": 1779385167804,
+      "type": "file"
+    },
+    {
+      "path": "package.json",
+      "accessCount": 3,
+      "lastAccessed": 1781132431894,
       "type": "file"
     },
     {
@@ -343,15 +355,9 @@
       "type": "file"
     },
     {
-      "path": "package.json",
-      "accessCount": 1,
-      "lastAccessed": 1779382600086,
-      "type": "file"
-    },
-    {
-      "path": "components/markdown-editor.tsx",
-      "accessCount": 1,
-      "lastAccessed": 1779382689532,
+      "path": "app/billing/page.tsx",
+      "accessCount": 2,
+      "lastAccessed": 1781110956877,
       "type": "file"
     },
     {
@@ -508,12 +514,6 @@
       "path": "lib/sync/prod-to-test/AGENTS.md",
       "accessCount": 1,
       "lastAccessed": 1779382817530,
-      "type": "file"
-    },
-    {
-      "path": "app/billing/page.tsx",
-      "accessCount": 1,
-      "lastAccessed": 1779383159986,
       "type": "file"
     },
     {
