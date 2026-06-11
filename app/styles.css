@@ -3328,6 +3328,20 @@ li.active {
   margin-block: 0.18rem 0;
 }
 
+.markdownContent table {
+  width: 100%;
+}
+
+.markdownContent table thead tr th {
+   text-align: left;
+   border-bottom: 1px solid black;
+}
+
+.markdownContent table td {
+    padding: 0.5rem 1rem
+}
+
+
 .commentMdxEditor .markdownContent [class*="listItemChecked"],
 .commentMdxEditor .markdownContent [class*="listItemUnchecked"] {
   display: list-item;
