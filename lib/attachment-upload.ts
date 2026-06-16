@@ -2,6 +2,75 @@
 
 import { authedJsonFetch, ensureAccessToken } from "@/lib/browser-auth";
 
+/**
+ * POST a file's bytes directly to a Dropbox temporary upload link via XHR
+ * (Fetch lacks upload-progress events) and validate the response. Resolves on a
+ * confirmed upload, rejects with a user-facing message on conflict/HTTP/network
+ * failure. `onProgress` (0.1–0.9 band) is optional — omit it when no progress UI.
+ */
+export function postBytesToDropbox(
+  uploadUrl: string,
+  file: File,
+  onProgress?: (fraction: number) => void
+): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", uploadUrl);
+    xhr.setRequestHeader("Content-Type", "application/octet-stream");
+    if (onProgress) {
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) {
+          const dropboxFraction = event.loaded / event.total;
+          // Map 0-100% Dropbox upload to 10-90% of the overall progress band.
+          onProgress(Math.max(0.1, Math.min(0.9, 0.1 + dropboxFraction * 0.8)));
+        }
+      };
+    }
+    xhr.onload = () => {
+      // 4xx/5xx: real HTTP failure
+      if (xhr.status < 200 || xhr.status >= 300) {
+        const body = xhr.responseText.slice(0, 300);
+        if (/conflict|already exists|path\/conflict/i.test(body)) {
+          reject(new Error(
+            "A file with this name already exists in this project. Rename the file and try again."
+          ));
+          return;
+        }
+        reject(new Error(`Upload failed (${xhr.status}): ${body}`));
+        return;
+      }
+      // 2xx: parse body and verify it looks like a successful upload response.
+      let parsed: { "content-hash"?: string; ".tag"?: string; reason?: { ".tag"?: string } } | null = null;
+      try {
+        parsed = xhr.responseText ? JSON.parse(xhr.responseText) : null;
+      } catch {
+        parsed = null;
+      }
+      // Dropbox sometimes returns 200 with an embedded WriteError shape on commit conflicts.
+      if (parsed && parsed[".tag"] === "path") {
+        const reasonTag = parsed.reason?.[".tag"] ?? "unknown";
+        if (/conflict/i.test(reasonTag)) {
+          reject(new Error(
+            "A file with this name already exists in this project. Rename the file and try again."
+          ));
+          return;
+        }
+        reject(new Error(`Upload rejected by Dropbox: ${reasonTag}`));
+        return;
+      }
+      if (!parsed || !parsed["content-hash"]) {
+        reject(new Error("Upload completed but server response was unexpected."));
+        return;
+      }
+      resolve();
+    };
+    xhr.onerror = () => reject(new Error("Network error uploading to Dropbox"));
+    xhr.timeout = 300_000; // 5 minutes
+    xhr.ontimeout = () => reject(new Error("Upload timed out"));
+    xhr.send(file);
+  });
+}
+
 type UploadAttachmentArgs = {
   token: string;
   onToken: (token: string | null) => void;
@@ -47,63 +116,8 @@ export async function uploadAttachment(args: UploadAttachmentArgs) {
 
   // --- Steps 2 & 3, scoped so a failure can trigger orphan cleanup. ---
   async function uploadBytesAndFinalize() {
-  // 2. POST bytes directly to Dropbox via XHR (Fetch lacks upload-progress events).
-  //    Dropbox temporary upload links accept POST with the file body. The response is
-  //    only {"content-hash": "..."} so we rely on targetPath for the metadata lookup.
-  await new Promise<void>((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", uploadUrl);
-    xhr.setRequestHeader("Content-Type", "application/octet-stream");
-    xhr.upload.onprogress = (event) => {
-      if (event.lengthComputable) {
-        const dropboxFraction = event.loaded / event.total;
-        // Map 0-100% Dropbox upload to 10-90% of the overall progress band.
-        onUploadProgress(Math.max(0.1, Math.min(0.9, 0.1 + dropboxFraction * 0.8)));
-      }
-    };
-    xhr.onload = () => {
-      // 4xx/5xx: real HTTP failure
-      if (xhr.status < 200 || xhr.status >= 300) {
-        const body = xhr.responseText.slice(0, 300);
-        if (/conflict|already exists|path\/conflict/i.test(body)) {
-          reject(new Error(
-            "A file with this name already exists in this project. Rename the file and try again."
-          ));
-          return;
-        }
-        reject(new Error(`Upload failed (${xhr.status}): ${body}`));
-        return;
-      }
-      // 2xx: parse body and verify it looks like a successful upload response.
-      let parsed: { "content-hash"?: string; ".tag"?: string; reason?: { ".tag"?: string } } | null = null;
-      try {
-        parsed = xhr.responseText ? JSON.parse(xhr.responseText) : null;
-      } catch {
-        parsed = null;
-      }
-      // Dropbox sometimes returns 200 with an embedded WriteError shape on commit conflicts.
-      if (parsed && parsed[".tag"] === "path") {
-        const reasonTag = parsed.reason?.[".tag"] ?? "unknown";
-        if (/conflict/i.test(reasonTag)) {
-          reject(new Error(
-            "A file with this name already exists in this project. Rename the file and try again."
-          ));
-          return;
-        }
-        reject(new Error(`Upload rejected by Dropbox: ${reasonTag}`));
-        return;
-      }
-      if (!parsed || !parsed["content-hash"]) {
-        reject(new Error("Upload completed but server response was unexpected."));
-        return;
-      }
-      resolve();
-    };
-    xhr.onerror = () => reject(new Error("Network error uploading to Dropbox"));
-    xhr.timeout = 300_000; // 5 minutes
-    xhr.ontimeout = () => reject(new Error("Upload timed out"));
-    xhr.send(file);
-  });
+  // 2. POST bytes directly to Dropbox (shared XHR helper handles progress + parsing).
+  await postBytesToDropbox(uploadUrl, file, onUploadProgress);
 
   onUploadProgress(0.9);
 

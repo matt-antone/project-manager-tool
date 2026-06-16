@@ -1,37 +1,26 @@
-import { requireUser } from "@/lib/auth";
-import { badRequest, ok, serverError, unauthorized } from "@/lib/http";
+import { badRequest, ok } from "@/lib/http";
 import { listArchivedProjectsPaginated } from "@/lib/repositories";
+import { withUser } from "@/lib/with-user";
 import { z } from "zod";
 
-export async function GET(request: Request) {
-  try {
-    await requireUser(request);
-    const url = new URL(request.url);
-    const search = url.searchParams.get("search") ?? "";
-    const status = url.searchParams.get("status") ?? "all";
-    const page = parseInt(url.searchParams.get("page") ?? "1", 10);
-    const limit = parseInt(url.searchParams.get("limit") ?? "20", 10);
+export const GET = withUser("archived_projects_fetch_failed", async (request) => {
+  const url = new URL(request.url);
+  const search = url.searchParams.get("search") ?? "";
+  const status = url.searchParams.get("status") ?? "all";
+  const page = parseInt(url.searchParams.get("page") ?? "1", 10);
+  const limit = parseInt(url.searchParams.get("limit") ?? "20", 10);
 
-    const clientIdRaw = url.searchParams.get("clientId");
-    const clientIdTrimmed = clientIdRaw?.trim() ?? "";
-    let clientId: string | null = null;
-    if (clientIdTrimmed.length > 0) {
-      const parsed = z.string().uuid().safeParse(clientIdTrimmed);
-      if (!parsed.success) {
-        return badRequest("Invalid clientId");
-      }
-      clientId = parsed.data;
+  const clientIdRaw = url.searchParams.get("clientId");
+  const clientIdTrimmed = clientIdRaw?.trim() ?? "";
+  let clientId: string | null = null;
+  if (clientIdTrimmed.length > 0) {
+    const parsed = z.string().uuid().safeParse(clientIdTrimmed);
+    if (!parsed.success) {
+      return badRequest("Invalid clientId");
     }
-
-    const result = await listArchivedProjectsPaginated({ search, status, page, limit, clientId });
-    return ok(result);
-  } catch (error) {
-    console.error("archived_projects_fetch_failed", {
-      error: error instanceof Error ? error.message : String(error)
-    });
-    if (error instanceof Error && /auth|token|workspace/i.test(error.message)) {
-      return unauthorized(error.message);
-    }
-    return serverError();
+    clientId = parsed.data;
   }
-}
+
+  const result = await listArchivedProjectsPaginated({ search, status, page, limit, clientId });
+  return ok(result);
+});

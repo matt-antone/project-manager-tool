@@ -6,7 +6,8 @@
   ],
   "ignorePatterns": [
     "supabase/functions/**",
-    "lib/storage/**"
+    "lib/storage/**",
+    "scripts/**"
   ],
   "ignoreDependencies": [
     "@modelcontextprotocol/sdk",
@@ -22,5 +23,8 @@
   "rules": {
     "unused-dependencies": "warn",
     "unused-types": "warn"
+  },
+  "audit": {
+    "dupesBaseline": ".fallow-dupes-baseline.json"
   }
 }
