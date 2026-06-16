@@ -1218,6 +1218,10 @@ textarea {
 
 .projectLedgerBody {
   gap: 0.5rem;
+  /* Left gutter hosts the favorite star (absolutely placed) so the title and
+     the text below it share the same left edge. */
+  position: relative;
+  padding-left: 1.9rem;
 }
 
 .projectFlowCardBody {
@@ -1242,8 +1246,12 @@ textarea {
   margin: 0;
 }
 
-/* Per-user favorite star (sibling of the project title link). */
+/* Per-user favorite star — pinned in the body's left gutter so it never
+   reflows the title; the title aligns with the description beneath it. */
 .projectFavoriteStar {
+  position: absolute;
+  left: 0;
+  top: -0.1rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
