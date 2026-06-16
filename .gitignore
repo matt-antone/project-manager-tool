@@ -43,7 +43,4 @@ tmp/bc2-import-summary.json
 tmp/
 
 # OMC runtime state (rewritten live by tooling)
-.omc/state/hud-stdin-cache.json
-.omc/state/subagent-tracking.json
-.omc/state/agent-replay-*.jsonl
-.omc/state/*
+.omc/**/*
