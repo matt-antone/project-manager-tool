@@ -9,6 +9,7 @@ import {
   getUserProfileById,
   listProjectMemberRecipients
 } from "@/lib/repositories";
+import { getDisplayName } from "@/lib/display-name";
 import { z } from "zod";
 
 const CLIENT_MUTATION_BLOCK_PATTERN = /client is archived|client archive is in progress/i;
@@ -16,19 +17,6 @@ const CLIENT_MUTATION_BLOCK_PATTERN = /client is archived|client archive is in p
 const createCommentSchema = z.object({
   bodyMarkdown: z.string().min(1)
 });
-
-function getDisplayName(profile: {
-  first_name?: string | null;
-  last_name?: string | null;
-  firstName?: string | null;
-  lastName?: string | null;
-  email?: string | null;
-}) {
-  const firstName = (profile.first_name ?? profile.firstName ?? "").trim();
-  const lastName = (profile.last_name ?? profile.lastName ?? "").trim();
-  const fullName = `${firstName} ${lastName}`.trim();
-  return fullName || profile.email || "Teammate";
-}
 
 export async function POST(
   request: Request,

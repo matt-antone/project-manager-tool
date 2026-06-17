@@ -6,6 +6,7 @@ import {
   listClientsWithStats,
   getClientTabCounts
 } from "@/lib/repositories";
+import { withUser } from "@/lib/with-user";
 import { z } from "zod";
 
 const clientStringListSchema = z.array(z.string().trim().min(1));
@@ -17,27 +18,19 @@ const createClientSchema = z.object({
   domains: clientStringListSchema.optional().default([])
 });
 
-export async function GET(request: Request) {
-  try {
-    await requireUser(request);
-    const url = new URL(request.url);
-    if (url.searchParams.get("stats") === "1") {
-      const [active, archived, counts] = await Promise.all([
-        listClientsWithStats("active"),
-        listClientsWithStats("archived"),
-        getClientTabCounts()
-      ]);
-      return ok({ active, archived, counts });
-    }
-    const clients = await listClients();
-    return ok({ clients });
-  } catch (error) {
-    if (error instanceof Error && /auth|token|workspace/i.test(error.message)) {
-      return unauthorized(error.message);
-    }
-    return serverError();
+export const GET = withUser(null, async (request) => {
+  const url = new URL(request.url);
+  if (url.searchParams.get("stats") === "1") {
+    const [active, archived, counts] = await Promise.all([
+      listClientsWithStats("active"),
+      listClientsWithStats("archived"),
+      getClientTabCounts()
+    ]);
+    return ok({ active, archived, counts });
   }
-}
+  const clients = await listClients();
+  return ok({ clients });
+});
 
 export async function POST(request: Request) {
   try {

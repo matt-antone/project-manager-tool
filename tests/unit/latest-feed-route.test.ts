@@ -59,6 +59,29 @@ describe("GET /feeds/latest", () => {
     expect(payload.posts[1]?.publishedAt).toBe("2024-03-08T09:00:00.000Z");
   });
 
+  it("sets a Cache-Control that forces browser revalidation (no indefinite stale feed)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          `<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><item>` +
+            `<title>Post</title><link>https://example.com/1</link>` +
+            `<description><![CDATA[<p>Summary</p>]]></description>` +
+            `<pubDate>2024-03-01T09:00:00Z</pubDate></item></channel></rss>`,
+          { status: 200, headers: { "Content-Type": "application/xml" } }
+        )
+      )
+    );
+
+    const { GET } = await import("@/app/feeds/latest/route");
+    const response = await GET();
+    const cacheControl = response.headers.get("cache-control") ?? "";
+
+    // Must NOT let browsers freeze the feed: no `force-cache`-friendly long max-age.
+    expect(cacheControl).toContain("max-age=0");
+    expect(cacheControl).toContain("s-maxage");
+  });
+
   it("returns the last successful feed payload when a later refresh fully fails", async () => {
     const successResponses = new Map(
       FEATURED_FEEDS.map((source, index) => [

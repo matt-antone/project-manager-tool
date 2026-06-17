@@ -238,7 +238,10 @@ function ProjectsWorkspaceInner({ initial, children }: { initial: ProjectsBootst
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/feeds/latest", { cache: "force-cache" })
+    // `no-store`: never serve the browser's cached copy — `force-cache` here was
+    // freezing the feed on the first-ever response in Firefox. Freshness/efficiency
+    // are governed by the route's Cache-Control (CDN s-maxage) instead.
+    fetch("/feeds/latest", { cache: "no-store" })
       .then((response) => (response.ok ? response.json() : null))
       .then((feedData: { posts?: FeaturedFeedPost[] } | null) => {
         if (cancelled || !feedData) return;

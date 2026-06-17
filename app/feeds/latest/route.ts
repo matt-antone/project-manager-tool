@@ -1,9 +1,19 @@
 import { FEATURED_FEEDS, parseFeedPosts, sortFeedPostsByPublishedDate } from "@/lib/featured-feed";
-import { ok, serverError } from "@/lib/http";
+import { serverError } from "@/lib/http";
+import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
+// Browsers must always revalidate (max-age=0) so the feed can never freeze on a
+// client's first-ever response (the Firefox stale-feed bug). The CDN may cache for
+// 10 minutes and serve stale-while-revalidate for an hour to spare the function.
+const FEED_CACHE_CONTROL = "public, max-age=0, s-maxage=600, stale-while-revalidate=3600";
+
 let latestSuccessfulPosts: ReturnType<typeof sortFeedPostsByPublishedDate> = [];
+
+function feedResponse(posts: ReturnType<typeof sortFeedPostsByPublishedDate>) {
+  return NextResponse.json({ posts }, { headers: { "Cache-Control": FEED_CACHE_CONTROL } });
+}
 
 export async function GET() {
   const results = await Promise.all(
@@ -13,7 +23,9 @@ export async function GET() {
           headers: {
             Accept: "application/rss+xml, application/xml, text/xml"
           },
-          next: { revalidate: 86400 }
+          // Refresh the upstream RSS roughly in step with the CDN window so the
+          // end-to-end feed stays within ~10 minutes of the source.
+          next: { revalidate: 600 }
         });
 
         if (!response.ok) {
@@ -33,11 +45,11 @@ export async function GET() {
 
   if (pool.length) {
     latestSuccessfulPosts = pool;
-    return ok({ posts: pool });
+    return feedResponse(pool);
   }
 
   if (latestSuccessfulPosts.length) {
-    return ok({ posts: latestSuccessfulPosts });
+    return feedResponse(latestSuccessfulPosts);
   }
 
   const errors = results.flatMap((result) => (result.error ? [result.error] : []));
