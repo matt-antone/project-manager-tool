@@ -2716,6 +2716,13 @@ li.active {
   overflow: hidden;
 }
 
+.discussionPreview {
+  margin: 0.15rem 0 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--leading-snug);
+}
+
 .projectMeta {
   display: flex;
   flex-wrap: wrap;

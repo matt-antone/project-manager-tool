@@ -1695,6 +1695,7 @@ export async function listThreads(projectId: string) {
     `select
        discussion_threads.*,
        latest_comment.latest_comment_updated_at,
+       latest_comment_body.body_markdown as latest_comment_markdown,
        greatest(
          discussion_threads.created_at,
          discussion_threads.updated_at,
@@ -1710,6 +1711,14 @@ export async function listThreads(projectId: string) {
        where discussion_comments.project_id = discussion_threads.project_id
          and discussion_comments.thread_id = discussion_threads.id
      ) latest_comment on true
+     left join lateral (
+       select discussion_comments.body_markdown
+       from discussion_comments
+       where discussion_comments.project_id = discussion_threads.project_id
+         and discussion_comments.thread_id = discussion_threads.id
+       order by discussion_comments.created_at desc
+       limit 1
+     ) latest_comment_body on true
      left join user_profiles on user_profiles.id = discussion_threads.author_user_id
      where discussion_threads.project_id = $1
      order by activity_updated_at desc`,

@@ -18,7 +18,7 @@ import {
   hasDirtyProjectPageDrafts,
   isNewerProjectUpdate
 } from "@/lib/project-page-polling";
-import { renderMarkdown } from "@/lib/markdown";
+import { markdownToPlainText, renderMarkdown } from "@/lib/markdown";
 import { createProjectDialogValues, formatProjectDeadlineLocal, normalizeProjectColumn, parseProjectTags } from "@/lib/project-utils";
 import type { ClientRecord } from "@/lib/types/client-record";
 import { postBytesToDropbox, uploadAttachment } from "@/lib/attachment-upload";
@@ -71,6 +71,8 @@ type Thread = {
   id: string;
   title: string;
   body_html: string;
+  body_markdown: string;
+  latest_comment_markdown?: string | null;
   created_at: string;
   updated_at?: string | null;
   activity_updated_at?: string | null;
@@ -1022,6 +1024,9 @@ function ProjectPageContent({ projectId, initial }: { projectId: string; initial
                   <span>{thread.title}</span>
                   {newThreadIds.has(thread.id) ? <span className="newItemPill">New</span> : null}
                 </Link>
+                <p className="discussionPreview line-clamp-2">
+                  {markdownToPlainText(thread.latest_comment_markdown ?? thread.body_markdown)}
+                </p>
                 <small>{new Date(thread.created_at).toLocaleString()}</small>
               </div>
             </li>
