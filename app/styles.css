@@ -2775,6 +2775,28 @@ li.active {
   letter-spacing: 0;
 }
 
+.projectStatusControl {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+}
+
+.projectStatusControlLabel {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.projectStatusSelect {
+  font-size: var(--text-sm);
+  padding: 0.2rem 0.4rem;
+}
+
+.projectStatusSelect:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
 .projectHeaderRequestorSeparator {
   font-size: 1em;
 }

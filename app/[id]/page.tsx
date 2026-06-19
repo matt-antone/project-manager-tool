@@ -20,6 +20,7 @@ import {
 } from "@/lib/project-page-polling";
 import { markdownToPlainText, renderMarkdown } from "@/lib/markdown";
 import { createProjectDialogValues, formatProjectDeadlineLocal, normalizeProjectColumn, parseProjectTags } from "@/lib/project-utils";
+import { PROJECT_STATUS_LABELS, nextProjectStatuses, resolveProjectStatus, type ProjectStatus } from "@/lib/project-status";
 import type { ClientRecord } from "@/lib/types/client-record";
 import { postBytesToDropbox, uploadAttachment } from "@/lib/attachment-upload";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -162,6 +163,7 @@ function ProjectPageContent({ projectId, initial }: { projectId: string; initial
   const [isFileDragActive, setIsFileDragActive] = useState(false);
   const [isSavingProject, setIsSavingProject] = useState(false);
   const [isSavingMyHours, setIsSavingMyHours] = useState(false);
+  const [isSavingStatus, setIsSavingStatus] = useState(false);
   const [isRestoringProject, setIsRestoringProject] = useState(false);
   const [savingArchivedHoursUserId, setSavingArchivedHoursUserId] = useState<string | null>(null);
   const [savingExpenseLineId, setSavingExpenseLineId] = useState<string | null>(null);
@@ -357,6 +359,7 @@ function ProjectPageContent({ projectId, initial }: { projectId: string; initial
     mutationInFlight: isUploading ||
       isSavingProject ||
       isSavingMyHours ||
+      isSavingStatus ||
       isRestoringProject ||
       savingArchivedHoursUserId !== null ||
       savingExpenseLineId !== null ||
@@ -575,6 +578,27 @@ function ProjectPageContent({ projectId, initial }: { projectId: string; initial
       setStatus("My hours saved");
     } finally {
       setIsSavingMyHours(false);
+    }
+  }
+
+  async function handleStatusChange(nextStatus: ProjectStatus) {
+    if (!token || !projectId) return;
+    const currentStatus = resolveProjectStatus(project?.status);
+    if (nextStatus === currentStatus) return;
+
+    setIsSavingStatus(true);
+    setUploadError(null);
+    try {
+      const data = await authedFetch(token, `/projects/${projectId}/status`, {
+        method: "POST",
+        body: JSON.stringify({ status: nextStatus })
+      });
+      setProject((data?.project ?? null) as Project | null);
+      setStatus("Status updated");
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : "Could not update status");
+    } finally {
+      setIsSavingStatus(false);
     }
   }
 
@@ -856,6 +880,8 @@ function ProjectPageContent({ projectId, initial }: { projectId: string; initial
   }
 
   const projectTitle = project?.display_name ?? project?.name ?? "Project";
+  const currentStatus = resolveProjectStatus(project?.status);
+  const statusOptions = nextProjectStatuses(currentStatus, project?.archived === true);
   const requestor = project?.requestor?.trim() ?? "";
   const projectDescription = project?.description?.trim() ?? "";
   const totalArchivedHours = userHours.reduce((sum, entry) => sum + parseHoursNumber(entry.hours), 0);
@@ -878,6 +904,23 @@ function ProjectPageContent({ projectId, initial }: { projectId: string; initial
             ) : null}
           </h1>
           {project?.deadline ? <p className="headerSubtitle">Deadline: {formatProjectDeadlineLocal(project.deadline) ?? project.deadline}</p> : null}
+          {project ? (
+            <label className="projectStatusControl">
+              <span className="projectStatusControlLabel">Status</span>
+              <select
+                className="projectStatusSelect"
+                value={currentStatus}
+                disabled={isSavingStatus}
+                onChange={(event) => handleStatusChange(event.target.value as ProjectStatus)}
+              >
+                {statusOptions.map((statusOption) => (
+                  <option key={statusOption} value={statusOption}>
+                    {PROJECT_STATUS_LABELS[statusOption]}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
           {projectDescription ? (
             <div
               className="markdownContent headerSubtitle"
