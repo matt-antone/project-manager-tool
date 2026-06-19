@@ -11,6 +11,8 @@ import {
   type ProjectColumn
 } from "@/lib/project-utils";
 import { authedJsonFetch, fetchAuthSession } from "@/lib/browser-auth";
+import useSWR from "swr";
+import { primeProjectSwrToken, projectSwrFetcher, revalidateProjectEverywhere } from "@/lib/project-swr";
 import type { FeaturedFeedPost } from "@/lib/featured-feed";
 import type { ClientRecord } from "@/lib/types/client-record";
 import {
@@ -189,13 +191,40 @@ function ProjectsWorkspaceInner({ initial, children }: { initial: ProjectsBootst
   const domainAllowed = initial.domainAllowed;
   const clients = initial.clients;
   const createProjectClients = clients.filter((client) => !client.archived_at);
-  const [projects, setProjects] = useState<Project[]>(initial.projects);
   const [latestFeaturedPosts, setLatestFeaturedPosts] = useState<FeaturedFeedPost[]>(initial.latestFeaturedPosts);
   const [featuredFeedStatus, setFeaturedFeedStatus] = useState<"loading" | "ready">("loading");
   const [filterClientId, setFilterClientId] = useState<string | null>(null);
   const [activeSearch, setActiveSearch] = useState("");
   const [projectSort, setProjectSort] = useState<ProjectSort>("title");
   const [favoritingIds, setFavoritingIds] = useState<Set<string>>(() => new Set());
+
+  // Shared, revalidatable projects list. The key encodes the active filters, so
+  // changing client/search/sort fetches the right slice automatically, and any
+  // status mutation (here or on the detail route) can invalidate it by key —
+  // this is what keeps the board and the project detail page in sync.
+  const listKey = buildProjectsUrl({ clientId: filterClientId, search: activeSearch, sort: projectSort });
+  const { data: listData, mutate: mutateProjectsList } = useSWR(listKey, projectSwrFetcher, {
+    fallbackData: { projects: initial.projects } as Record<string, unknown>,
+    keepPreviousData: true
+  });
+  const projects = useMemo(() => (listData?.projects ?? []) as Project[], [listData]);
+
+  // Preserve the historical `setProjects` API used for optimistic local edits by
+  // writing through the SWR cache without triggering a revalidation.
+  const setProjects = useCallback<Dispatch<SetStateAction<Project[]>>>(
+    (action) => {
+      void mutateProjectsList(
+        (current) => {
+          const prev = ((current as { projects?: Project[] } | undefined)?.projects ?? []) as Project[];
+          const next =
+            typeof action === "function" ? (action as (p: Project[]) => Project[])(prev) : action;
+          return { ...((current as Record<string, unknown>) ?? {}), projects: next };
+        },
+        { revalidate: false }
+      );
+    },
+    [mutateProjectsList]
+  );
 
   const userId = initial.userId;
   const [projectForm, setProjectForm] = useState<ProjectDialogValues>(createProjectDialogValues());
@@ -211,11 +240,13 @@ function ProjectsWorkspaceInner({ initial, children }: { initial: ProjectsBootst
   const removeMember = useCallback((id: string) => {
     setSelectedMemberIds((current) => current.filter((x) => x !== id));
   }, []);
-  const refreshAbortControllerRef = useRef<AbortController | null>(null);
-  const projectSortRef = useRef<ProjectSort>("title");
-  projectSortRef.current = projectSort;
-
   const activeProjects = useMemo(() => projects.filter((project) => !project.archived), [projects]);
+
+  // Keep the shared SWR fetcher seeded with the freshest token this route holds,
+  // so list/detail reads across the app don't re-hit /auth/session needlessly.
+  useEffect(() => {
+    primeProjectSwrToken(accessToken);
+  }, [accessToken]);
 
   const authedFetch = useCallback(async (path: string, options: RequestInit = {}) => {
     const { accessToken: nextToken, data } = await authedJsonFetch({
@@ -229,12 +260,6 @@ function ProjectsWorkspaceInner({ initial, children }: { initial: ProjectsBootst
     }
     return data;
   }, [accessToken]);
-
-  useEffect(() => {
-    return () => {
-      refreshAbortControllerRef.current?.abort();
-    };
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -264,50 +289,13 @@ function ProjectsWorkspaceInner({ initial, children }: { initial: ProjectsBootst
     };
   }, []);
 
-  const refreshProjects = useCallback(
-    async (overrides: RefreshProjectsOptions = {}) => {
-      refreshAbortControllerRef.current?.abort();
-
-      const controller = new AbortController();
-      refreshAbortControllerRef.current = controller;
-
-      const forwardAbort = () => controller.abort();
-      if (overrides.signal) {
-        if (overrides.signal.aborted) {
-          controller.abort();
-        } else {
-          overrides.signal.addEventListener("abort", forwardAbort, { once: true });
-        }
-      }
-
-      try {
-        const nextClientId = overrides.clientId !== undefined ? overrides.clientId : filterClientId;
-        const nextSearch = overrides.search !== undefined ? overrides.search : activeSearch;
-        const nextSort = overrides.sort !== undefined ? overrides.sort : projectSortRef.current;
-        const { accessToken: nextToken, data } = await authedJsonFetch({
-          accessToken: overrides.accessToken !== undefined ? overrides.accessToken : accessToken,
-          init: { signal: controller.signal },
-          onToken: setAccessToken,
-          path: buildProjectsUrl({ clientId: nextClientId, search: nextSearch, sort: nextSort })
-        });
-
-        if (nextToken !== accessToken) {
-          setAccessToken(nextToken);
-        }
-        if (!controller.signal.aborted) {
-          setProjects((data?.projects ?? []) as Project[]);
-        }
-      } finally {
-        if (overrides.signal) {
-          overrides.signal.removeEventListener("abort", forwardAbort);
-        }
-        if (refreshAbortControllerRef.current === controller) {
-          refreshAbortControllerRef.current = null;
-        }
-      }
-    },
-    [accessToken, activeSearch, filterClientId]
-  );
+  // The active filters already live in the SWR key, so a refresh is just a
+  // revalidation of the current list. Overrides are accepted for backward
+  // compatibility with existing callers but are no longer needed — changing a
+  // filter updates the key and refetches automatically.
+  const refreshProjects = useCallback(async () => {
+    await mutateProjectsList();
+  }, [mutateProjectsList]);
 
   const createProject = useCallback(async () => {
     setIsCreatingProject(true);
@@ -372,9 +360,11 @@ function ProjectsWorkspaceInner({ initial, children }: { initial: ProjectsBootst
   const toggleArchive = useCallback(
     async (project: Project) => {
       await authedFetch(`/projects/${project.id}/${project.archived ? "restore" : "archive"}`, { method: "POST" });
-      await refreshProjects({ clientId: filterClientId, search: activeSearch, sort: projectSort });
+      // Archiving changes which projects are active; refresh the list and the
+      // project's detail cache everywhere.
+      await revalidateProjectEverywhere(project.id);
     },
-    [activeSearch, authedFetch, filterClientId, projectSort, refreshProjects]
+    [authedFetch]
   );
 
   function runWithTransition(update: () => void) {
@@ -412,13 +402,15 @@ function ProjectsWorkspaceInner({ initial, children }: { initial: ProjectsBootst
           method: "POST",
           body: JSON.stringify({ status: targetColumn })
         });
-        await refreshProjects({ clientId: filterClientId, search: activeSearch, sort: projectSort });
+        // Refresh both this list and the project's detail cache so the change is
+        // reflected wherever the project is shown, not just on the board.
+        await revalidateProjectEverywhere(projectId);
       } catch (error) {
         setProjects(previousProjects);
         throw error;
       }
     },
-    [activeSearch, authedFetch, filterClientId, projectSort, projects, refreshProjects]
+    [authedFetch, projects, setProjects]
   );
 
   const toggleFavorite = useCallback(
@@ -448,7 +440,7 @@ function ProjectsWorkspaceInner({ initial, children }: { initial: ProjectsBootst
         });
       }
     },
-    [authedFetch, projects]
+    [authedFetch, projects, setProjects]
   );
 
   const getProjectClientLabel = useCallback((project: Project) => {

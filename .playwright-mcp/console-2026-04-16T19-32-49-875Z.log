@@ -1,7 +1,0 @@
-[    2591ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:3456/_next/static/chunks/c1e95_next_dist_compiled_react-dom_0385d50b._.js:14537
-[    4486ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3456/_next/static/chunks/c1e95_next_dist_client_2f3fd29a._.js:5949
-[    4571ms] [LOG] [Fast Refresh] done in 186ms @ http://localhost:3456/_next/static/chunks/c1e95_next_dist_client_2f3fd29a._.js:5809
-[    4695ms] Error: Please sign in
-    at ensureAccessToken (http://localhost:3456/_next/static/chunks/_worktrees_markdown-content-styles_34869161._.js:136:15)
-    at async authedJsonFetch (http://localhost:3456/_next/static/chunks/_worktrees_markdown-content-styles_34869161._.js:148:23)
-    at async ProjectsWorkspaceInner.useCallback[refreshProjects] (http://localhost:3456/_next/static/chunks/_worktrees_markdown-content-styles_c775342f._.js:1211:58)
