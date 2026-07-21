@@ -26,7 +26,9 @@
     "mcp:mint-jwt": "node scripts/mint-mcp-jwt.mjs"
   },
   "dependencies": {
+    "@matt-antone/seo-audit": "github:matt-antone/seo-audit-tool",
     "@mdxeditor/editor": "^3.52.5",
+    "@react-pdf/renderer": "^4.5.1",
     "@supabase/supabase-js": "^2.54.0",
     "dropbox": "^10.34.0",
     "marked": "^13.0.2",

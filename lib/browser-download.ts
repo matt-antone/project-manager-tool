@@ -1,5 +1,5 @@
-export async function triggerBrowserDownload(args: { url: string; filename: string }) {
-  const response = await fetch(args.url);
+export async function triggerBrowserDownload(args: { url: string; filename: string; init?: RequestInit }) {
+  const response = await fetch(args.url, args.init);
   if (!response.ok) {
     throw new Error(`Download failed: ${response.status}`);
   }
