@@ -44,3 +44,4 @@ tmp/
 
 # OMC runtime state (rewritten live by tooling)
 .omc/**/*
+.playwright-mcp/

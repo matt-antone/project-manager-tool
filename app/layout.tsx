@@ -5,6 +5,7 @@ import { getSiteSettings } from "@/lib/repositories";
 import { DEFAULT_SITE_TITLE, SITE_DESCRIPTION, normalizeSiteTitle } from "@/lib/site-branding";
 import "./styles.css";
 import SiteHeader from "./header";
+import { SwrProvider } from "@/components/swr-provider";
 
 export async function generateMetadata(): Promise<Metadata> {
   try {
@@ -55,8 +56,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         </Script>
       </head>
       <body className={`${instrumentSans.className} ${newsreader.variable}`}>
-        <SiteHeader />
-        <div className="appFrame">{children}</div>
+        <SwrProvider>
+          <SiteHeader />
+          <div className="appFrame">{children}</div>
+        </SwrProvider>
       </body>
     </html>
   );

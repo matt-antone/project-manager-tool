@@ -6,6 +6,7 @@ import { BillingProjectRow, type BillingProjectItem } from "@/components/project
 import { useProjectsWorkspace } from "@/components/projects/projects-workspace-context";
 import { ProjectsWorkspaceShell } from "@/components/projects/projects-workspace-shell";
 import { authedJsonFetch } from "@/lib/browser-auth";
+import { revalidateProjectEverywhere } from "@/lib/project-swr";
 import type { ProjectUserHours } from "@/lib/repositories";
 
 type BillingRow = BillingProjectItem & { user_hours_breakdown?: ProjectUserHours[] | null };
@@ -59,6 +60,7 @@ export function ProjectsBilling() {
       init: { method: "POST" }
     });
     setRefreshKey((value) => value + 1);
+    await revalidateProjectEverywhere(project.id);
   }
 
   async function handleReopen(project: BillingProjectItem) {
@@ -72,6 +74,7 @@ export function ProjectsBilling() {
       }
     });
     setRefreshKey((value) => value + 1);
+    await revalidateProjectEverywhere(project.id);
   }
 
   const projects = result?.projects ?? [];

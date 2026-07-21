@@ -23,7 +23,9 @@ import { createProjectDialogValues, formatProjectDeadlineLocal, normalizeProject
 import { PROJECT_STATUS_LABELS, nextProjectStatuses, resolveProjectStatus, type ProjectStatus } from "@/lib/project-status";
 import type { ClientRecord } from "@/lib/types/client-record";
 import { postBytesToDropbox, uploadAttachment } from "@/lib/attachment-upload";
+import { primeProjectSwrToken, projectKey, projectSwrFetcher } from "@/lib/project-swr";
 import { useCallback, useEffect, useRef, useState } from "react";
+import useSWR from "swr";
 import { useParams } from "next/navigation";
 
 const MarkdownEditor = dynamic(() => import("@/components/markdown-editor"), {
@@ -152,6 +154,28 @@ function ProjectPageContent({ projectId, initial }: { projectId: string; initial
   const [uploadError, setUploadError] = useState<string | null>(null);
 
   const [project, setProject] = useState<Project | null>(initial.project);
+
+  // Subscribe to the shared project cache so a status change made elsewhere (the
+  // board, another tab) flows into this page. revalidateOnMount is off — the
+  // bootstrap already supplied the first copy; focus/reconnect and explicit
+  // invalidations drive refreshes from here on.
+  const { data: projectCacheData } = useSWR(
+    projectId ? projectKey(projectId) : null,
+    projectSwrFetcher,
+    { revalidateOnMount: false }
+  );
+  useEffect(() => {
+    const fresh = (projectCacheData as { project?: Project } | null | undefined)?.project;
+    if (fresh) {
+      setProject(fresh);
+    }
+  }, [projectCacheData]);
+  // Seed the shared SWR fetcher with this route's token so cross-route reads
+  // don't re-hit /auth/session.
+  useEffect(() => {
+    primeProjectSwrToken(token);
+  }, [token]);
+
   const [userHours, setUserHours] = useState<ProjectUserHoursEntry[]>(initial.userHours);
   const [expenseLines, setExpenseLines] = useState<ProjectExpenseLine[]>(initial.expenseLines);
   const [clients, setClients] = useState<ClientRecord[]>(initial.clients);
