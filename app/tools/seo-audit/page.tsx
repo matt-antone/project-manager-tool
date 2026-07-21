@@ -135,7 +135,7 @@ export default function SeoAuditToolPage() {
         </h2>
         <p className="toolsCardHint">
           Enter a URL to crawl and audit. We&apos;ll queue the audit and take you straight to its results page,
-          where it runs and updates automatically.
+          where it runs and updates automatically. Crawl is limited to 30 pages, so the final report may not represent the entire site. 
         </p>
 
         <form onSubmit={handleSubmit} className="toolsForm">
