@@ -8,6 +8,7 @@ import {
   ensureProfile,
   parseBearerToken,
 } from "./auth.ts";
+import { handleOAuth, publicUrl } from "./oauth.ts";
 import { registerTools } from "./tools.ts";
 
 const RPM_LIMIT = parseInt(Deno.env.get("MCP_RATE_LIMIT_RPM") ?? "120", 10);
@@ -51,6 +52,16 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return new Response("Missing PM_SERVER_JWT_SECRET", { status: 503, headers: SECURITY_HEADERS });
   }
 
+  const jwtConfig = {
+    secret: JWT_SECRET,
+    issuer: JWT_ISSUER,
+    audience: JWT_AUDIENCE,
+    clockToleranceSeconds: JWT_CLOCK_TOLERANCE_SECONDS,
+  };
+
+  const oauthResponse = await handleOAuth(req, jwtConfig);
+  if (oauthResponse) return oauthResponse;
+
   if (url.pathname.endsWith("/readyz")) {
     const { error } = await supabase.from("agent_clients").select("client_id").limit(1);
     if (error) return new Response("unavailable", { status: 503, headers: SECURITY_HEADERS });
@@ -61,15 +72,18 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   let agent;
   try {
-    agent = await authenticateAgent(supabase, token, {
-      secret: JWT_SECRET,
-      issuer: JWT_ISSUER,
-      audience: JWT_AUDIENCE,
-      clockToleranceSeconds: JWT_CLOCK_TOLERANCE_SECONDS,
-    });
+    agent = await authenticateAgent(supabase, token, jwtConfig);
   } catch (e) {
     if (e instanceof AuthError) {
-      return new Response(e.message, { status: e.status, headers: SECURITY_HEADERS });
+      // RFC 9728: point OAuth clients (Claude connectors) at the resource metadata.
+      const headers = e.status === 401
+        ? {
+          ...SECURITY_HEADERS,
+          "WWW-Authenticate":
+            `Bearer resource_metadata="${publicUrl(req)}/.well-known/oauth-protected-resource"`,
+        }
+        : SECURITY_HEADERS;
+      return new Response(e.message, { status: e.status, headers });
     }
     return new Response("Internal error", { status: 500, headers: SECURITY_HEADERS });
   }

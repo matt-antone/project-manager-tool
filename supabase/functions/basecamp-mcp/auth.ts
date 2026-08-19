@@ -52,6 +52,11 @@ const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 const JWT_ALG = "HS256";
 
+// Audiences for the stateless OAuth artifacts. Shared with the app's /mcp/authorize route.
+export const OAUTH_CLIENT_AUDIENCE = "oauth-client";
+export const OAUTH_CODE_AUDIENCE = "oauth-code";
+export const OAUTH_CODE_TTL_SECONDS = 120;
+
 export function createRateLimiter(rpmLimit: number): RateLimiter {
   const windows = new Map<string, number[]>();
   return {
@@ -92,7 +97,7 @@ function base64ToBytes(value: string): Uint8Array {
   return bytes;
 }
 
-function base64UrlEncode(bytes: Uint8Array): string {
+export function base64UrlEncode(bytes: Uint8Array): string {
   return bytesToBase64(bytes).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
@@ -106,7 +111,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function timingSafeEqual(left: Uint8Array, right: Uint8Array): boolean {
+export function timingSafeEqual(left: Uint8Array, right: Uint8Array): boolean {
   if (left.length !== right.length) return false;
   let diff = 0;
   for (let i = 0; i < left.length; i += 1) {
@@ -209,6 +214,7 @@ export async function verifyJwt(token: string, config: JwtAuthConfig): Promise<J
   }
 
   return {
+    ...(payload as Record<string, unknown>),
     sub,
     iss,
     aud: aud as string | string[],
