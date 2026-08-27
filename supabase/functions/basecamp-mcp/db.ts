@@ -202,24 +202,23 @@ export async function getClient(supabase: SupabaseClient, clientId: string) {
 
 export async function createProject(
   supabase: SupabaseClient,
-  params: { name: string; description?: string | null; deadline?: string | null; business_client_id?: string | null; tags?: string[] | null; requestor?: string | null; pm_note?: string | null },
+  params: { name: string; description?: string | null; deadline?: string | null; business_client_id: string; tags?: string[] | null; requestor?: string | null; pm_note?: string | null },
   agentId: string
 ) {
-  const { data, error } = await supabase
-    .from("projects")
-    .insert({
-      name: params.name,
-      slug: params.name.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
-      description: params.description ?? null,
-      deadline: params.deadline ?? null,
-      client_id: params.business_client_id ?? null,
-      tags: params.tags ?? null,
-      requestor: params.requestor ?? null,
-      pm_note: params.pm_note ?? null,
-      created_by: agentId,
-    })
-    .select()
-    .single();
+  // Delegates to mcp_create_project (0034) so the project gets the same
+  // project_code / seq / slug / storage identity as the app's create path.
+  const projectsRoot = Deno.env.get("DROPBOX_PROJECTS_ROOT_FOLDER")?.trim();
+  const { data, error } = await supabase.rpc("mcp_create_project", {
+    p_name: params.name,
+    p_created_by: agentId,
+    p_client_id: params.business_client_id,
+    p_description: params.description ?? null,
+    p_deadline: params.deadline ?? null,
+    p_tags: params.tags ?? [],
+    p_requestor: params.requestor ?? null,
+    p_pm_note: params.pm_note ?? null,
+    ...(projectsRoot ? { p_projects_root: projectsRoot } : {}),
+  });
   if (error) throw error;
   return data;
 }
@@ -235,7 +234,7 @@ export async function updateProject(
   if (params.deadline !== undefined) patch.deadline = params.deadline;
   if (params.status !== undefined) patch.status = params.status;
   if (params.archived !== undefined) patch.archived = params.archived;
-  if (params.tags !== undefined) patch.tags = params.tags;
+  if (params.tags !== undefined) patch.tags = params.tags ?? []; // projects.tags is NOT NULL
   if (params.requestor !== undefined) patch.requestor = params.requestor;
   if (params.pm_note !== undefined) patch.pm_note = params.pm_note;
 
@@ -483,4 +482,42 @@ export async function getThreadForNotification(
     .single();
   if (error || !data) return null;
   return data as { id: string; title: string; project_id: string };
+}
+
+export async function getProjectHours(supabase: SupabaseClient, projectCode: string) {
+  // Job codes are unique but not consistently uppercase in the data (e.g. Leve-0004),
+  // so match case-insensitively. Wildcards are escaped so ilike stays an exact match.
+  const pattern = projectCode.replace(/[%_\\]/g, (char) => `\\${char}`);
+  const { data: project, error } = await supabase
+    .from("projects")
+    .select("id, name, project_code")
+    .ilike("project_code", pattern)
+    .maybeSingle();
+  if (error) throw error;
+  if (!project) return null;
+
+  const { data, error: hoursError } = await supabase
+    .from("project_user_hours")
+    .select("hours, updated_at, user_profiles!inner(id, email, first_name, last_name)")
+    .eq("project_id", project.id);
+  if (hoursError) throw hoursError;
+
+  const users = (data ?? [])
+    .map((row: any) => {
+      const profile = Array.isArray(row.user_profiles) ? row.user_profiles[0] : row.user_profiles;
+      return {
+        user_id: profile.id as string,
+        name: [profile.first_name, profile.last_name].filter(Boolean).join(" ") || profile.email,
+        email: profile.email as string,
+        hours: Number(row.hours),
+        updated_at: row.updated_at as string,
+      };
+    })
+    .sort((a, b) => b.hours - a.hours);
+
+  return {
+    project,
+    users,
+    total_hours: Math.round(users.reduce((sum, u) => sum + u.hours, 0) * 100) / 100,
+  };
 }

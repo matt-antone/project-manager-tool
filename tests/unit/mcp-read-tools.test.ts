@@ -186,3 +186,29 @@ describe("get_client", () => {
     expect(result.isError).toBe(true);
   });
 });
+
+describe("get_project_hours", () => {
+  it("looks up by job code case-insensitively, sorts users by hours and totals them", async () => {
+    const spy = vi.spyOn(db, "getProjectHours").mockResolvedValue({
+      project: { id: "proj-1", name: "Test", project_code: "AATA-0001" },
+      users: [{ user_id: "u1", name: "Ann", email: "ann@x.com", hours: 3.2, updated_at: "2026-01-01" }],
+      total_hours: 3.2,
+    } as any);
+    const server = mockServer();
+    registerTools(server as any, {} as any, agent);
+
+    const data = JSON.parse((await server.call("get_project_hours", { project_code: " Leve-0004 " })).content[0].text);
+    expect(spy).toHaveBeenCalledWith({}, "Leve-0004");
+    expect(data.total_hours).toBe(3.2);
+    expect(data.users[0].name).toBe("Ann");
+  });
+
+  it("reports an unknown job code as not found", async () => {
+    vi.spyOn(db, "getProjectHours").mockResolvedValue(null);
+    const server = mockServer();
+    registerTools(server as any, {} as any, agent);
+    const result = await server.call("get_project_hours", { project_code: "NOPE-9999" });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("NOPE-9999");
+  });
+});

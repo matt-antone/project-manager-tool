@@ -28,7 +28,7 @@ export function notifyBestEffort(
   const _Deno = typeof globalThis !== "undefined" ? (globalThis as any).Deno : undefined;
   const appUrl = (_Deno ? _Deno.env.get("APP_URL") : process.env.APP_URL) ?? "";
 
-  (async () => {
+  const task = (async () => {
     try {
       // For comment_updated, resolve thread (and project_id) once; all others have projectId directly
       const threadP =
@@ -128,4 +128,11 @@ export function notifyBestEffort(
       console.error("mcp_notification_failed", { type: event.type, error: String(e), stack: e instanceof Error ? e.stack : undefined });
     }
   })();
+
+  // Supabase Edge Runtime kills the isolate as soon as the tool response is
+  // sent, so a floating promise never reaches Mailgun. waitUntil keeps the
+  // isolate alive until the send finishes. No-op outside the edge runtime.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const edgeRuntime = (globalThis as any).EdgeRuntime;
+  if (typeof edgeRuntime?.waitUntil === "function") edgeRuntime.waitUntil(task);
 }
