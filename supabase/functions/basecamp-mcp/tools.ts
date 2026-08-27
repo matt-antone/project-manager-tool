@@ -26,7 +26,15 @@ function notFound(id: string) {
 }
 
 function dbError(e: unknown) {
-  return { isError: true as const, content: [{ type: "text" as const, text: "Database error" }] };
+  // Surface the Postgres message/code — a bare "Database error" left agents
+  // guessing at constraint failures they had no way to see.
+  const err = e as { message?: string; code?: string; details?: string; hint?: string } | null;
+  const detail = [err?.message, err?.details, err?.hint].filter(Boolean).join(" — ");
+  const text = detail
+    ? `Database error${err?.code ? ` [${err.code}]` : ""}: ${detail}`
+    : "Database error";
+  console.error("basecamp-mcp db error", e);
+  return { isError: true as const, content: [{ type: "text" as const, text }] };
 }
 
 function dropboxError(e: unknown) {
@@ -96,6 +104,21 @@ export function registerTools(
       try {
         const result = await db.getProject(supabase, project_id);
         if (!result) return notFound(project_id);
+        return ok(result);
+      } catch (e) {
+        return dbError(e);
+      }
+    }
+  );
+
+  server.tool(
+    "get_project_hours",
+    "Get hours logged per user on a project, looked up by its XXX-NNNN job code (e.g. AATA-0001), plus the project total.",
+    { project_code: z.string() },
+    async ({ project_code }) => {
+      try {
+        const result = await db.getProjectHours(supabase, project_code.trim());
+        if (!result) return notFound(project_code);
         return ok(result);
       } catch (e) {
         return dbError(e);
@@ -197,12 +220,12 @@ export function registerTools(
 
   server.tool(
     "create_project",
-    "Create a new project. business_client_id is the UUID of a row in the clients table.",
+    "Create a new project. business_client_id is required — it is the UUID of a row in the clients table (list_clients), and the project code/slug are derived from it. There is no way to attach a client afterwards.",
     {
       name: z.string().min(1),
       description: z.string().nullish(),
       deadline: z.string().date().nullish(),
-      business_client_id: z.string().uuid().nullish(),
+      business_client_id: z.string().uuid(),
       tags: z.array(z.string()).nullish(),
       requestor: z.string().nullish(),
       pm_note: z.string().nullish(),

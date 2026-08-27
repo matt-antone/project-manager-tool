@@ -4,6 +4,8 @@ import * as db from "../../supabase/functions/basecamp-mcp/db.ts";
 import { registerTools } from "../../supabase/functions/basecamp-mcp/tools.ts";
 import * as notify from "../../supabase/functions/basecamp-mcp/notify.ts";
 
+vi.stubGlobal("Deno", { env: { get: () => undefined } });
+
 function mockServer() {
   const handlers = new Map<string, Function>();
   return {
@@ -26,6 +28,38 @@ describe("create_project", () => {
     expect(spy).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ name: "New Project" }), "mcp-test-client");
     const data = JSON.parse(result.content[0].text);
     expect(data.name).toBe("New Project");
+  });
+});
+
+describe("db.createProject", () => {
+  // Regression: projects.tags is `not null default '{}'` (migration 0006), so
+  // sending an explicit null failed every create with a bare "Database error".
+  beforeEach(() => {
+    vi.restoreAllMocks(); // earlier describes spy on db.createProject itself
+  });
+
+  function rpcSpy() {
+    const rpc = vi.fn().mockResolvedValue({ data: { id: "p-1" }, error: null });
+    return { rpc, supabase: { rpc } as any };
+  }
+
+  it("never sends null tags", async () => {
+    const { rpc, supabase } = rpcSpy();
+    await db.createProject(supabase, { name: "New Project", business_client_id: "c-1" }, "mcp-test-client");
+    expect(rpc).toHaveBeenCalledWith("mcp_create_project", expect.objectContaining({ p_tags: [] }));
+  });
+
+  it("passes the client through so the project gets a code", async () => {
+    const { rpc, supabase } = rpcSpy();
+    await db.createProject(
+      supabase,
+      { name: "New Project", business_client_id: "c-1", tags: ["cipa"] },
+      "mcp-test-client"
+    );
+    expect(rpc).toHaveBeenCalledWith(
+      "mcp_create_project",
+      expect.objectContaining({ p_client_id: "c-1", p_tags: ["cipa"], p_created_by: "mcp-test-client" })
+    );
   });
 });
 

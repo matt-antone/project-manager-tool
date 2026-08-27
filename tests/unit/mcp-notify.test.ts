@@ -146,3 +146,26 @@ describe("notifyBestEffort — edge cases", () => {
     // If we got here without throwing, the test passes
   });
 });
+
+describe("notifyBestEffort — edge runtime", () => {
+  it("hands the send to EdgeRuntime.waitUntil so the isolate outlives the response", async () => {
+    const waitUntil = vi.fn();
+    (globalThis as any).EdgeRuntime = { waitUntil };
+    try {
+      vi.spyOn(mailer, "sendThreadCreatedEmail").mockResolvedValue({ skipped: false, recipientCount: 1 });
+      const { notifyBestEffort } = await import("../../supabase/functions/basecamp-mcp/notify.ts");
+      notifyBestEffort(mockSupabase, agent, {
+        type: "thread_created",
+        projectId: "p-1",
+        threadId: "t-1",
+        threadTitle: "Kickoff",
+        bodyMarkdown: "Hello",
+      });
+      expect(waitUntil).toHaveBeenCalledOnce();
+      await waitUntil.mock.calls[0][0];
+      expect(mailer.sendThreadCreatedEmail).toHaveBeenCalledOnce();
+    } finally {
+      delete (globalThis as any).EdgeRuntime;
+    }
+  });
+});
