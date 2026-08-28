@@ -314,6 +314,12 @@ function DiscussionPageContent(props: {
     }
   }
 
+  async function downloadThreadFiles() {
+    for (const id of threadFileIds) {
+      await openDownload(id).catch((error) => setStatus(error.message));
+    }
+  }
+
   function setPendingAttachmentState(id: string, partial: Partial<PendingAttachment>) {
     setPendingAttachments((current) =>
       current.map((attachment) => (attachment.id === id ? { ...attachment, ...partial } : attachment))
@@ -380,6 +386,11 @@ function DiscussionPageContent(props: {
     return emailLocal.slice(0, 2).toUpperCase() || "TM";
   }
 
+  const threadFileIds = [
+    ...(thread?.threadAttachments ?? []),
+    ...(thread?.comments ?? []).flatMap((comment) => comment.attachments ?? [])
+  ].map((attachment) => attachment.id);
+
   return (
     <main className="page">
       <header className="header discussionPageHeader">
@@ -414,6 +425,11 @@ function DiscussionPageContent(props: {
                   Started the thread
                   {thread.edited_at ? " (edited)" : ""}
                 </small>
+                {threadFileIds.length > 0 && (
+                  <OneShotButton type="button" className="terciary" onClick={downloadThreadFiles}>
+                    Download all ({threadFileIds.length})
+                  </OneShotButton>
+                )}
                 {currentUser?.id === thread.author_user_id && !isEditingThread && (
                   <>
                     <OneShotButton type="button" className="terciary" onClick={startEditingThread}>
