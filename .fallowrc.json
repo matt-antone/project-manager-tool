@@ -1,30 +1,32 @@
 {
   "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
+
+  // scripts/ are tsx/node CLI entry points wired up in package.json scripts;
+  // tests/support/* is aliased in by vitest.config.ts resolve.alias.
   "entry": [
-    "supabase/functions/*/index.ts",
-    "scripts/*.{ts,mjs}"
+    "scripts/*.ts",
+    "scripts/*.mjs",
+    "tests/support/*.ts"
   ],
+
+  // Deno project, built and deployed by the Supabase CLI with its own
+  // deno.json import map. Not reachable from the Next graph by design.
   "ignorePatterns": [
-    "supabase/functions/**",
-    "lib/storage/**",
-    "scripts/**"
+    "supabase/functions/**"
   ],
+
+  // eslint-config-next resolves via .eslintrc.json "extends": "next/*".
+  // react-dom is required at runtime by Next, never imported directly.
   "ignoreDependencies": [
-    "@modelcontextprotocol/sdk",
     "eslint-config-next",
     "react-dom"
   ],
-  "dynamicallyLoaded": [
-    "tests/support/**"
-  ],
-  "usedClassMembers": [
-    "downloadFile"
-  ],
+
   "rules": {
-    "unused-dependencies": "warn",
-    "unused-types": "warn"
-  },
-  "audit": {
-    "dupesBaseline": ".fallow-dupes-baseline.json"
+    // Both rules misfire on this codebase: shared type vocabularies are
+    // composed in-file, and adapter methods are called through structural
+    // Pick<> interfaces rather than on the concrete class.
+    "unused-types": "off",
+    "unused-class-members": "off"
   }
 }
