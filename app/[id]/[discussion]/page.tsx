@@ -425,11 +425,6 @@ function DiscussionPageContent(props: {
                   Started the thread
                   {thread.edited_at ? " (edited)" : ""}
                 </small>
-                {threadFileIds.length > 0 && (
-                  <OneShotButton type="button" className="terciary" onClick={downloadThreadFiles}>
-                    Download all ({threadFileIds.length})
-                  </OneShotButton>
-                )}
                 {currentUser?.id === thread.author_user_id && !isEditingThread && (
                   <>
                     <OneShotButton type="button" className="terciary" onClick={startEditingThread}>
@@ -474,16 +469,29 @@ function DiscussionPageContent(props: {
             ) : (
               <>
                 <MarkdownHtml html={thread.body_html} />
-                {(thread.threadAttachments?.length ?? 0) > 0 && (
+                {threadFileIds.length > 0 && (
                   <div className="commentAttachmentStack">
-                    <AttachmentCollections
-                      attachments={thread.threadAttachments ?? []}
-                      projectId={projectId}
-                      token={token}
-                      onToken={setToken}
-                      onDownload={openDownload}
-                      onError={setStatus}
-                    />
+                    <div className="sectionHeader">
+                      <div className="sectionHeaderTitle">
+                        <h3>Files</h3>
+                      </div>
+                      <div className="sectionHeaderTitle">
+                        <OneShotButton type="button" className="linkButton" onClick={downloadThreadFiles}>
+                          Download all
+                        </OneShotButton>
+                        <small className="filesCount">{threadFileIds.length} total</small>
+                      </div>
+                    </div>
+                    {(thread.threadAttachments?.length ?? 0) > 0 && (
+                      <AttachmentCollections
+                        attachments={thread.threadAttachments ?? []}
+                        projectId={projectId}
+                        token={token}
+                        onToken={setToken}
+                        onDownload={openDownload}
+                        onError={setStatus}
+                      />
+                    )}
                   </div>
                 )}
               </>
