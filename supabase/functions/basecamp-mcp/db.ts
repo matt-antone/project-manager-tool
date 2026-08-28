@@ -449,26 +449,39 @@ export async function listProjectMemberRecipients(
   projectId: string,
   excludeUserId: string | null = null
 ): Promise<MailRecipient[]> {
-  const { data, error } = await supabase
+  // Two queries rather than a `user_profiles!inner(...)` embed: project_members
+  // has no foreign key to user_profiles, so PostgREST cannot resolve the join
+  // (PGRST200) and every MCP notification silently resolved to zero recipients.
+  // The app path (lib/repositories.ts) uses a raw SQL join, which needs no FK.
+  const { data: members, error } = await supabase
     .from("project_members")
-    .select("user_id, user_profiles!inner(email, first_name, last_name, is_legacy)")
+    .select("user_id")
     .eq("project_id", projectId);
-  if (error || !data) return [];
-  return data
-    .filter((row: any) => {
-      if (excludeUserId && row.user_id === excludeUserId) return false;
-      const profile = Array.isArray(row.user_profiles) ? row.user_profiles[0] : row.user_profiles;
-      if (!profile?.email) return false;
-      if (profile.is_legacy === true) return false;
-      return true;
-    })
-    .map((row: any) => {
-      const profile = Array.isArray(row.user_profiles) ? row.user_profiles[0] : row.user_profiles;
-      return {
-        email: profile.email as string,
-        name: [profile.first_name, profile.last_name].filter(Boolean).join(" ") || null,
-      } as MailRecipient;
-    });
+  if (error) {
+    console.error("list_project_members_failed", { projectId, error });
+    return [];
+  }
+  const ids = (members ?? [])
+    .map((row: { user_id: string }) => row.user_id)
+    .filter((id) => id !== excludeUserId);
+  if (ids.length === 0) return [];
+
+  // is_legacy = false, not `!== true` — matches the app, which also drops NULL.
+  const { data: profiles, error: profileError } = await supabase
+    .from("user_profiles")
+    .select("email, first_name, last_name")
+    .in("id", ids)
+    .eq("is_legacy", false)
+    .not("email", "is", null);
+  if (profileError) {
+    console.error("list_member_profiles_failed", { projectId, error: profileError });
+    return [];
+  }
+
+  return (profiles ?? []).map((profile: any) => ({
+    email: profile.email as string,
+    name: [profile.first_name, profile.last_name].filter(Boolean).join(" ") || null,
+  } as MailRecipient));
 }
 
 export async function getThreadForNotification(

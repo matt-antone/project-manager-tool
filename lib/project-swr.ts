@@ -45,7 +45,7 @@ export function projectKey(id: string) {
 const LIST_KEY_PREFIX = "/projects?";
 
 /** Matches every cached projects-list variant (filters/sort change the query). */
-export function isProjectsListKey(key: unknown): key is string {
+function isProjectsListKey(key: unknown): key is string {
   return typeof key === "string" && key.startsWith(LIST_KEY_PREFIX);
 }
 
