@@ -27,7 +27,7 @@ type ProjectFilesPanelProps = {
   onOpenProjectFolder: () => void;
   onUploadSelectedFile: () => void;
   onClearSelectedFile: () => void;
-  onDownloadFile: (fileId: string) => void;
+  onDownloadFile: (fileId: string) => void | Promise<void>;
   getFileBadgeLabel: (file: ProjectFile) => string;
   newFileIds?: ReadonlySet<string>;
 };
@@ -61,7 +61,20 @@ export function ProjectFilesPanel(props: ProjectFilesPanelProps) {
             Open Dropbox folder
           </OneShotButton>
         </div>
-        <small className="filesCount">{files.length} total</small>
+        <div className="sectionHeaderTitle">
+          {files.length > 0 && (
+            <OneShotButton
+              type="button"
+              className="linkButton"
+              onClick={async () => {
+                for (const file of files) await onDownloadFile(file.id);
+              }}
+            >
+              Download all
+            </OneShotButton>
+          )}
+          <small className="filesCount">{files.length} total</small>
+        </div>
       </div>
 
       <ul className="fileThumbGrid">
