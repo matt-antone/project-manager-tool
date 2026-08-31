@@ -25,6 +25,10 @@ function notFound(id: string) {
   return { isError: true as const, content: [{ type: "text" as const, text: `Not found: ${id}` }] };
 }
 
+function toolError(text: string) {
+  return { isError: true as const, content: [{ type: "text" as const, text }] };
+}
+
 function dbError(e: unknown) {
   // Surface the Postgres message/code — a bare "Database error" left agents
   // guessing at constraint failures they had no way to see.
@@ -377,6 +381,85 @@ export function registerTools(
       try {
         return ok(await db.createFile(supabase, params, agent.client_id));
       } catch (e) {
+        return dbError(e);
+      }
+    }
+  );
+
+  const UPLOAD_MAX_BYTES = 10 * 1024 * 1024; // 10MB — base64 over JSON-RPC; larger goes through the web app
+
+  server.tool(
+    "upload_file",
+    "Upload a file to a project. content_base64 is the file's raw bytes, base64-encoded (max 10MB). Pass thread_id to attach it to a discussion thread, and comment_id (with thread_id) to attach it to a comment. Returns the registered file record.",
+    {
+      project_id: z.string().uuid(),
+      filename: z.string().min(1).max(255),
+      content_base64: z.string().min(1),
+      mime_type: z.string().min(1).optional(),
+      thread_id: z.string().uuid().optional(),
+      comment_id: z.string().uuid().optional(),
+    },
+    async ({ project_id, filename, content_base64, mime_type, thread_id, comment_id }) => {
+      if (comment_id && !thread_id) return toolError("comment_id requires thread_id");
+
+      const name = (filename.split("/").pop() ?? "")
+        .replace(/[\\:*?"<>|]+/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (!name) return toolError("Invalid filename");
+
+      let bytes: Uint8Array;
+      try {
+        const binary = atob(content_base64.replace(/\s+/g, ""));
+        bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      } catch {
+        return toolError("content_base64 is not valid base64");
+      }
+      if (bytes.length === 0) return toolError("File is empty");
+      if (bytes.length > UPLOAD_MAX_BYTES) {
+        return toolError(`File is ${bytes.length} bytes; the upload limit is ${UPLOAD_MAX_BYTES}. Upload larger files through the web app.`);
+      }
+
+      try {
+        if (thread_id) {
+          const thread = await db.getThread(supabase, thread_id);
+          if (!thread) return notFound(thread_id);
+          if (thread.thread.project_id !== project_id) {
+            return toolError("thread_id belongs to a different project");
+          }
+        }
+
+        const dir = await db.getProjectStorageDir(supabase, project_id);
+        if (!dir) return toolError(`Project ${project_id} has no storage folder — upload through the web app instead.`);
+
+        const uploaded = await dropbox.uploadFile(`${dir.replace(/\/+$/, "")}/uploads/${name}`, bytes);
+
+        return ok(
+          await db.createFile(
+            supabase,
+            {
+              project_id,
+              filename: uploaded.pathDisplay.split("/").pop() ?? name,
+              mime_type: mime_type ?? "application/octet-stream",
+              size_bytes: uploaded.size,
+              dropbox_file_id: uploaded.fileId,
+              dropbox_path: uploaded.pathDisplay,
+              checksum: uploaded.contentHash,
+              thread_id,
+              comment_id,
+            },
+            agent.client_id
+          )
+        );
+      } catch (e) {
+        if (
+          e instanceof dropbox.DropboxConfigError ||
+          e instanceof dropbox.DropboxStorageError ||
+          e instanceof dropbox.DropboxAuthError
+        ) {
+          return dropboxError(e);
+        }
         return dbError(e);
       }
     }

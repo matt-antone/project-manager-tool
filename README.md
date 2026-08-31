@@ -150,7 +150,7 @@ The MCP server exposes these tools once connected:
 
 **Read:** `list_projects`, `list_archived_projects`, `get_project`, `get_thread`, `list_files`, `get_file`, `search_content`, `get_my_profile`
 
-**Write:** `create_project`, `update_project`, `create_thread`, `update_thread`, `create_comment`, `update_comment`, `create_file`, `update_my_profile`
+**Write:** `create_project`, `update_project`, `create_thread`, `update_thread`, `create_comment`, `update_comment`, `create_file`, `upload_file`, `update_my_profile`
 
 ### Claude Code quick-start
 

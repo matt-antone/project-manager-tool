@@ -95,6 +95,35 @@ export async function getTemporaryLink(pathOrId: string): Promise<string> {
   }
 }
 
+export async function uploadFile(
+  path: string,
+  bytes: Uint8Array
+): Promise<{ fileId: string; pathDisplay: string; size: number; contentHash: string }> {
+  try {
+    const client = await getClient();
+    const res = await client.filesUpload({
+      path,
+      contents: bytes,
+      mode: { ".tag": "add" },
+      autorename: true,
+    });
+    const r = res.result as unknown as {
+      id: string;
+      path_display?: string;
+      size: number;
+      content_hash?: string;
+    };
+    return {
+      fileId: r.id,
+      pathDisplay: r.path_display ?? path,
+      size: r.size,
+      contentHash: r.content_hash ?? "",
+    };
+  } catch (e: any) {
+    throw classifyError(e);
+  }
+}
+
 export async function downloadFile(
   pathOrId: string
 ): Promise<{ bytes: Uint8Array; contentType: string }> {

@@ -329,6 +329,20 @@ export async function updateComment(
 
 // ─── Files ───────────────────────────────────────────────────────────────────
 
+/** Dropbox folder a project's files live in. Null when the project has none yet. */
+export async function getProjectStorageDir(
+  supabase: SupabaseClient,
+  projectId: string
+): Promise<string | null> {
+  const { data, error } = await supabase
+    .from("projects")
+    .select("storage_project_dir")
+    .eq("id", projectId)
+    .single();
+  if (error || !data) return null;
+  return (data as { storage_project_dir: string | null }).storage_project_dir || null;
+}
+
 export async function createFile(
   supabase: SupabaseClient,
   params: {
