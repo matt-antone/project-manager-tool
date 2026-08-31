@@ -232,3 +232,96 @@ describe("download_file", () => {
     expect(text).not.toContain("/projects/ACME/uploads/readme.txt");
   });
 });
+
+describe("upload_file", () => {
+  const thread = { thread: { id: "t-1", project_id: "p-1", title: "T" }, comments: [], files: [] };
+
+  function stubStorage() {
+    vi.spyOn(db, "getProjectStorageDir").mockResolvedValue("/projects/ACME/ACME-0001-Site");
+    return vi.spyOn(dropbox, "uploadFile").mockResolvedValue({
+      fileId: "id:new",
+      pathDisplay: "/projects/ACME/ACME-0001-Site/uploads/notes.txt",
+      size: 11,
+      contentHash: "hash-1",
+    });
+  }
+
+  it("uploads bytes into the project's uploads folder and registers the file on a thread", async () => {
+    const upSpy = stubStorage();
+    vi.spyOn(db, "getThread").mockResolvedValue(thread as any);
+    const createSpy = vi.spyOn(db, "createFile").mockResolvedValue({ id: "f-9" } as any);
+    const server = mockServer();
+    registerTools(server as any, {} as any, agent);
+
+    const result = await server.call("upload_file", {
+      project_id: "p-1",
+      filename: "notes.txt",
+      content_base64: btoa("hello world"),
+      mime_type: "text/plain",
+      thread_id: "t-1",
+    });
+
+    expect(upSpy).toHaveBeenCalledWith(
+      "/projects/ACME/ACME-0001-Site/uploads/notes.txt",
+      new TextEncoder().encode("hello world")
+    );
+    expect(createSpy).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        project_id: "p-1",
+        filename: "notes.txt",
+        mime_type: "text/plain",
+        size_bytes: 11,
+        dropbox_file_id: "id:new",
+        checksum: "hash-1",
+        thread_id: "t-1",
+      }),
+      "mcp-test-client"
+    );
+    expect(JSON.parse(result.content[0].text).id).toBe("f-9");
+  });
+
+  it("rejects a thread from another project", async () => {
+    stubStorage();
+    vi.spyOn(db, "getThread").mockResolvedValue({ ...thread, thread: { ...thread.thread, project_id: "p-2" } } as any);
+    const createSpy = vi.spyOn(db, "createFile").mockResolvedValue({ id: "f-x" } as any);
+    const server = mockServer();
+    registerTools(server as any, {} as any, agent);
+
+    const result = await server.call("upload_file", {
+      project_id: "p-1",
+      filename: "notes.txt",
+      content_base64: btoa("hi"),
+      thread_id: "t-1",
+    });
+    expect(result.isError).toBe(true);
+    expect(createSpy).not.toHaveBeenCalled();
+  });
+
+  it("errors when the project has no storage folder", async () => {
+    vi.spyOn(db, "getProjectStorageDir").mockResolvedValue(null);
+    const upSpy = vi.spyOn(dropbox, "uploadFile").mockResolvedValue({} as any);
+    const server = mockServer();
+    registerTools(server as any, {} as any, agent);
+
+    const result = await server.call("upload_file", {
+      project_id: "p-1",
+      filename: "notes.txt",
+      content_base64: btoa("hi"),
+    });
+    expect(result.isError).toBe(true);
+    expect(upSpy).not.toHaveBeenCalled();
+  });
+
+  it("rejects comment_id without thread_id", async () => {
+    const server = mockServer();
+    registerTools(server as any, {} as any, agent);
+    const result = await server.call("upload_file", {
+      project_id: "p-1",
+      filename: "notes.txt",
+      content_base64: btoa("hi"),
+      comment_id: "c-1",
+    });
+    expect(result.isError).toBe(true);
+  });
+});
