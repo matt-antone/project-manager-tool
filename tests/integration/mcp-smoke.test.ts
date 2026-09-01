@@ -100,7 +100,7 @@ describe("MCP smoke tests (live)", () => {
     }
 
     const response = await mcpCall("tools/list", {});
-    expect(response.result?.tools).toHaveLength(19);
+    expect(response.result?.tools).toHaveLength(21);
     const names = response.result.tools.map((t: { name: string }) => t.name);
     expect(names).toContain("list_projects");
     expect(names).toContain("get_my_profile");
