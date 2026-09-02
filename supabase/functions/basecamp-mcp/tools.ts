@@ -386,40 +386,80 @@ export function registerTools(
     }
   );
 
-  const UPLOAD_MAX_BYTES = 10 * 1024 * 1024; // 10MB — base64 over JSON-RPC; larger goes through the web app
+  // Inline base64 costs an agent ~1.4 tokens per byte, so it is only viable for tiny files.
+  // Anything real goes through create_upload_link -> POST bytes to Dropbox -> upload_file{target_path},
+  // which is the same temporary-upload-link flow the web app uses.
+  const UPLOAD_MAX_BYTES = 10 * 1024 * 1024;
+
+  function sanitizeUploadName(filename: string): string {
+    return (filename.split("/").pop() ?? "")
+      .replace(/[\\:*?"<>|]+/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  /** `<storage_project_dir>/uploads`, or null when the project has no storage folder. */
+  async function uploadsDirFor(project_id: string): Promise<string | null> {
+    const dir = await db.getProjectStorageDir(supabase, project_id);
+    return dir ? `${dir.replace(/\/+$/, "")}/uploads` : null;
+  }
+
+  function storageOrDbError(e: unknown) {
+    if (
+      e instanceof dropbox.DropboxConfigError ||
+      e instanceof dropbox.DropboxStorageError ||
+      e instanceof dropbox.DropboxAuthError
+    ) {
+      return dropboxError(e);
+    }
+    return dbError(e);
+  }
 
   server.tool(
-    "upload_file",
-    "Upload a file to a project. content_base64 is the file's raw bytes, base64-encoded (max 10MB). Pass thread_id to attach it to a discussion thread, and comment_id (with thread_id) to attach it to a comment. Returns the registered file record.",
+    "create_upload_link",
+    "Step 1 of 2 for uploading a file of any size. Returns a temporary Dropbox upload_url (valid ~4 hours) and the target_path it commits to. POST the file's raw bytes to upload_url with Content-Type: application/octet-stream (e.g. `curl -X POST <upload_url> --data-binary @file.pdf -H 'Content-Type: application/octet-stream'`) — the bytes go straight to storage and never pass through this conversation. Then call upload_file with that exact target_path to register the file and attach it to a thread. Use this for anything but tiny files.",
     {
       project_id: z.string().uuid(),
       filename: z.string().min(1).max(255),
-      content_base64: z.string().min(1),
+    },
+    async ({ project_id, filename }) => {
+      const name = sanitizeUploadName(filename);
+      if (!name) return toolError("Invalid filename");
+      try {
+        const uploadsDir = await uploadsDirFor(project_id);
+        if (!uploadsDir) return toolError(`Project ${project_id} has no storage folder — upload through the web app instead.`);
+        const target_path = await dropbox.resolveAvailableUploadPath(uploadsDir, name);
+        const upload_url = await dropbox.getTemporaryUploadLink(target_path);
+        return ok({
+          upload_url,
+          target_path,
+          expires_in_seconds: 14400,
+          next_step: "POST the raw bytes to upload_url, then call upload_file with this target_path.",
+        });
+      } catch (e) {
+        return storageOrDbError(e);
+      }
+    }
+  );
+
+  server.tool(
+    "upload_file",
+    "Register a file on a project, and optionally attach it to a thread (thread_id) or comment (comment_id, which requires thread_id). Provide the bytes one of two ways: target_path — the path returned by create_upload_link, after you have POSTed the bytes to its upload_url (use this for any real file, no size limit); or content_base64 — the bytes inline, base64-encoded, capped at 10MB and only sensible for very small files since base64 costs roughly 1.4 tokens per byte. Give exactly one of the two.",
+    {
+      project_id: z.string().uuid(),
+      filename: z.string().min(1).max(255).optional(),
+      target_path: z.string().min(1).max(1024).optional(),
+      content_base64: z.string().min(1).optional(),
       mime_type: z.string().min(1).optional(),
       thread_id: z.string().uuid().optional(),
       comment_id: z.string().uuid().optional(),
     },
-    async ({ project_id, filename, content_base64, mime_type, thread_id, comment_id }) => {
+    async ({ project_id, filename, target_path, content_base64, mime_type, thread_id, comment_id }) => {
       if (comment_id && !thread_id) return toolError("comment_id requires thread_id");
-
-      const name = (filename.split("/").pop() ?? "")
-        .replace(/[\\:*?"<>|]+/g, "")
-        .replace(/\s+/g, " ")
-        .trim();
-      if (!name) return toolError("Invalid filename");
-
-      let bytes: Uint8Array;
-      try {
-        const binary = atob(content_base64.replace(/\s+/g, ""));
-        bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-      } catch {
-        return toolError("content_base64 is not valid base64");
+      if (!target_path === !content_base64) {
+        return toolError("Provide exactly one of target_path (after create_upload_link) or content_base64.");
       }
-      if (bytes.length === 0) return toolError("File is empty");
-      if (bytes.length > UPLOAD_MAX_BYTES) {
-        return toolError(`File is ${bytes.length} bytes; the upload limit is ${UPLOAD_MAX_BYTES}. Upload larger files through the web app.`);
-      }
+      if (content_base64 && !filename) return toolError("filename is required with content_base64");
 
       try {
         if (thread_id) {
@@ -430,22 +470,49 @@ export function registerTools(
           }
         }
 
-        const dir = await db.getProjectStorageDir(supabase, project_id);
-        if (!dir) return toolError(`Project ${project_id} has no storage folder — upload through the web app instead.`);
+        const uploadsDir = await uploadsDirFor(project_id);
+        if (!uploadsDir) return toolError(`Project ${project_id} has no storage folder — upload through the web app instead.`);
 
-        const uploaded = await dropbox.uploadFile(`${dir.replace(/\/+$/, "")}/uploads/${name}`, bytes);
+        let stored: { fileId: string; pathDisplay: string; size: number; contentHash: string };
+
+        if (target_path) {
+          // Path attribution: a caller must not register bytes sitting outside this project's folder.
+          if (!target_path.startsWith(`${uploadsDir}/`)) {
+            return toolError("target_path is outside this project's uploads folder");
+          }
+          stored = await dropbox.getFileMetadata(target_path);
+          if (!stored.pathDisplay.startsWith(`${uploadsDir}/`)) {
+            return toolError("target_path is outside this project's uploads folder");
+          }
+        } else {
+          const name = sanitizeUploadName(filename!);
+          if (!name) return toolError("Invalid filename");
+          let bytes: Uint8Array;
+          try {
+            const binary = atob(content_base64!.replace(/\s+/g, ""));
+            bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+          } catch {
+            return toolError("content_base64 is not valid base64");
+          }
+          if (bytes.length === 0) return toolError("File is empty");
+          if (bytes.length > UPLOAD_MAX_BYTES) {
+            return toolError(`File is ${bytes.length} bytes; the inline limit is ${UPLOAD_MAX_BYTES}. Use create_upload_link for files of any size.`);
+          }
+          stored = await dropbox.uploadFile(`${uploadsDir}/${name}`, bytes);
+        }
 
         return ok(
           await db.createFile(
             supabase,
             {
               project_id,
-              filename: uploaded.pathDisplay.split("/").pop() ?? name,
+              filename: stored.pathDisplay.split("/").pop() ?? filename ?? "file",
               mime_type: mime_type ?? "application/octet-stream",
-              size_bytes: uploaded.size,
-              dropbox_file_id: uploaded.fileId,
-              dropbox_path: uploaded.pathDisplay,
-              checksum: uploaded.contentHash,
+              size_bytes: stored.size,
+              dropbox_file_id: stored.fileId,
+              dropbox_path: stored.pathDisplay,
+              checksum: stored.contentHash,
               thread_id,
               comment_id,
             },
@@ -453,14 +520,7 @@ export function registerTools(
           )
         );
       } catch (e) {
-        if (
-          e instanceof dropbox.DropboxConfigError ||
-          e instanceof dropbox.DropboxStorageError ||
-          e instanceof dropbox.DropboxAuthError
-        ) {
-          return dropboxError(e);
-        }
-        return dbError(e);
+        return storageOrDbError(e);
       }
     }
   );
