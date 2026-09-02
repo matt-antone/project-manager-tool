@@ -1,5 +1,5 @@
 // tests/unit/mcp-file-profile-tools.test.ts
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import * as db from "../../supabase/functions/basecamp-mcp/db.ts";
 import { registerTools } from "../../supabase/functions/basecamp-mcp/tools.ts";
 import * as dropbox from "../../supabase/functions/basecamp-mcp/dropbox.ts";
@@ -323,5 +323,91 @@ describe("upload_file", () => {
       comment_id: "c-1",
     });
     expect(result.isError).toBe(true);
+  });
+});
+
+describe("create_upload_link", () => {
+  it("returns a temporary upload URL under the project's uploads folder", async () => {
+    vi.spyOn(db, "getProjectStorageDir").mockResolvedValue("/projects/ACME/ACME-0001-Site");
+    vi.spyOn(dropbox, "resolveAvailableUploadPath").mockResolvedValue(
+      "/projects/ACME/ACME-0001-Site/uploads/big.pdf"
+    );
+    vi.spyOn(dropbox, "getTemporaryUploadLink").mockResolvedValue("https://content.dropboxapi.com/temp-upload");
+    const server = mockServer();
+    registerTools(server as any, {} as any, agent);
+
+    const result = await server.call("create_upload_link", { project_id: "p-1", filename: "big.pdf" });
+    const data = JSON.parse(result.content[0].text);
+    expect(data.upload_url).toBe("https://content.dropboxapi.com/temp-upload");
+    expect(data.target_path).toBe("/projects/ACME/ACME-0001-Site/uploads/big.pdf");
+  });
+});
+
+describe("upload_file via target_path", () => {
+  beforeEach(() => {
+    vi.spyOn(db, "getProjectStorageDir").mockResolvedValue("/projects/ACME/ACME-0001-Site");
+  });
+
+  it("registers bytes already uploaded to Dropbox without sending them through the tool call", async () => {
+    vi.spyOn(dropbox, "getFileMetadata").mockResolvedValue({
+      fileId: "id:big",
+      pathDisplay: "/projects/ACME/ACME-0001-Site/uploads/big.pdf",
+      size: 745_472,
+      contentHash: "hash-big",
+    });
+    const uploadSpy = vi.spyOn(dropbox, "uploadFile");
+    const createSpy = vi.spyOn(db, "createFile").mockResolvedValue({ id: "f-big" } as any);
+    const server = mockServer();
+    registerTools(server as any, {} as any, agent);
+
+    const result = await server.call("upload_file", {
+      project_id: "p-1",
+      target_path: "/projects/ACME/ACME-0001-Site/uploads/big.pdf",
+      mime_type: "application/pdf",
+    });
+
+    expect(uploadSpy).not.toHaveBeenCalled();
+    expect(createSpy).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        filename: "big.pdf",
+        size_bytes: 745_472,
+        dropbox_file_id: "id:big",
+        checksum: "hash-big",
+      }),
+      "mcp-test-client"
+    );
+    expect(JSON.parse(result.content[0].text).id).toBe("f-big");
+  });
+
+  it("rejects a target_path outside the project's uploads folder", async () => {
+    const metaSpy = vi.spyOn(dropbox, "getFileMetadata").mockResolvedValue({} as any);
+    const createSpy = vi.spyOn(db, "createFile").mockResolvedValue({ id: "x" } as any);
+    const server = mockServer();
+    registerTools(server as any, {} as any, agent);
+
+    const result = await server.call("upload_file", {
+      project_id: "p-1",
+      target_path: "/projects/OTHER/secret.pdf",
+    });
+    expect(result.isError).toBe(true);
+    expect(metaSpy).not.toHaveBeenCalled();
+    expect(createSpy).not.toHaveBeenCalled();
+  });
+
+  it("requires exactly one of target_path or content_base64", async () => {
+    const server = mockServer();
+    registerTools(server as any, {} as any, agent);
+
+    const neither = await server.call("upload_file", { project_id: "p-1" });
+    expect(neither.isError).toBe(true);
+
+    const both = await server.call("upload_file", {
+      project_id: "p-1",
+      filename: "a.txt",
+      target_path: "/projects/ACME/ACME-0001-Site/uploads/a.txt",
+      content_base64: btoa("hi"),
+    });
+    expect(both.isError).toBe(true);
   });
 });
