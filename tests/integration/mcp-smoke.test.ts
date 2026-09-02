@@ -100,7 +100,7 @@ describe("MCP smoke tests (live)", () => {
     }
 
     const response = await mcpCall("tools/list", {});
-    expect(response.result?.tools).toHaveLength(19);
+    expect(response.result?.tools).toHaveLength(22);
     const names = response.result.tools.map((t: { name: string }) => t.name);
     expect(names).toContain("list_projects");
     expect(names).toContain("get_my_profile");
@@ -109,6 +109,7 @@ describe("MCP smoke tests (live)", () => {
     expect(names).toContain("download_file");
     expect(names).toContain("create_file");
     expect(names).toContain("upload_file");
+    expect(names).toContain("create_upload_link");
   });
 
   it("list_projects returns an array when live smoke config is present", async () => {

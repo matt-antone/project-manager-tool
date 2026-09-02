@@ -95,6 +95,79 @@ export async function getTemporaryLink(pathOrId: string): Promise<string> {
   }
 }
 
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    const client = await getClient();
+    await client.filesGetMetadata({ path });
+    return true;
+  } catch (e: any) {
+    const message = String(e?.error?.error_summary ?? e?.message ?? "");
+    if (e?.status === 409 && message.includes("not_found")) return false;
+    throw classifyError(e);
+  }
+}
+
+/** foo.pdf -> foo-1.pdf -> foo-2.pdf … Temporary upload links commit with autorename:false. */
+export async function resolveAvailableUploadPath(dir: string, filename: string): Promise<string> {
+  const dot = filename.lastIndexOf(".");
+  const base = dot > 0 ? filename.slice(0, dot) : filename;
+  const ext = dot > 0 ? filename.slice(dot) : "";
+  for (let i = 0; i < 1000; i++) {
+    const candidate = `${dir}/${i === 0 ? base : `${base}-${i}`}${ext}`;
+    if (!(await pathExists(candidate))) return candidate;
+  }
+  throw new DropboxStorageError(`Unable to resolve a unique upload path for ${filename}`);
+}
+
+export async function getTemporaryUploadLink(targetPath: string): Promise<string> {
+  try {
+    const client = await getClient();
+    const res = await client.filesGetTemporaryUploadLink({
+      commit_info: {
+        path: targetPath,
+        mode: { ".tag": "add" },
+        // Safe because resolveAvailableUploadPath verified the path is free.
+        autorename: false,
+        mute: true,
+      },
+      duration: 14400, // 4 hours, the documented Dropbox max
+    });
+    return res.result.link;
+  } catch (e: any) {
+    throw classifyError(e);
+  }
+}
+
+export async function getFileMetadata(
+  targetPath: string
+): Promise<{ fileId: string; pathDisplay: string; size: number; contentHash: string }> {
+  try {
+    const client = await getClient();
+    const res = await client.filesGetMetadata({ path: targetPath });
+    const entry = res.result as {
+      ".tag": string;
+      id?: string;
+      path_display?: string;
+      size?: number;
+      content_hash?: string;
+    };
+    if (entry[".tag"] !== "file") {
+      throw new DropboxStorageError(`${targetPath} is not a file`);
+    }
+    if (!entry.id || !entry.path_display || typeof entry.size !== "number") {
+      throw new DropboxStorageError(`Dropbox metadata for ${targetPath} is missing required fields`);
+    }
+    return {
+      fileId: entry.id,
+      pathDisplay: entry.path_display,
+      size: entry.size,
+      contentHash: entry.content_hash ?? "",
+    };
+  } catch (e: any) {
+    throw classifyError(e);
+  }
+}
+
 export async function uploadFile(
   path: string,
   bytes: Uint8Array
